@@ -34,34 +34,58 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
+            android.util.Log.d("MainActivity", "onCreate started")
+            
             binding = ActivityMainBinding.inflate(layoutInflater)
             setContentView(binding.root)
             
+            android.util.Log.d("MainActivity", "View binding completed")
+            
             setupViews()
+            android.util.Log.d("MainActivity", "Views setup completed")
+            
             // 不在启动时自动检查权限，让用户手动操作
+            android.util.Log.d("MainActivity", "onCreate completed successfully")
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error in onCreate", e)
-            Toast.makeText(this, "应用初始化失败: ${e.message}", Toast.LENGTH_LONG).show()
+            android.util.Log.e("MainActivity", "Fatal error in onCreate", e)
+            e.printStackTrace()
+            try {
+                Toast.makeText(this, "应用初始化失败: ${e.message}", Toast.LENGTH_LONG).show()
+            } catch (toastException: Exception) {
+                android.util.Log.e("MainActivity", "Failed to show error toast", toastException)
+            }
             finish()
         }
     }
     
     private fun setupViews() {
-        binding.btnStartBackup.setOnClickListener {
-            checkPermissionAndSetup()
-        }
-        
-        binding.btnStopBackup.setOnClickListener {
-            backupManager.cancelPeriodicBackup()
-            Toast.makeText(this, "已停止备份任务", Toast.LENGTH_SHORT).show()
-        }
-        
-        binding.btnTestBackup.setOnClickListener {
-            if (checkPermission()) {
-                triggerTestBackup()
-            } else {
-                requestPermission()
+        try {
+            binding.btnStartBackup.setOnClickListener {
+                checkPermissionAndSetup()
             }
+            
+            binding.btnStopBackup.setOnClickListener {
+                try {
+                    backupManager.cancelPeriodicBackup()
+                    Toast.makeText(this, "已停止备份任务", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "Error stopping backup", e)
+                    Toast.makeText(this, "停止备份失败", Toast.LENGTH_SHORT).show()
+                }
+            }
+            
+            binding.btnTestBackup.setOnClickListener {
+                if (checkPermission()) {
+                    triggerTestBackup()
+                } else {
+                    requestPermission()
+                }
+            }
+            
+            android.util.Log.d("MainActivity", "All views setup completed")
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error setting up views", e)
+            e.printStackTrace()
         }
     }
     

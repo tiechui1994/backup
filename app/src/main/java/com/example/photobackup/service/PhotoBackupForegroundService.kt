@@ -51,10 +51,22 @@ class PhotoBackupForegroundService : Service() {
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val title = intent?.getStringExtra("title") ?: "照片备份中..."
-        val notification = createNotification(title, "正在备份照片...", 0, 0)
-        startForeground(NOTIFICATION_ID, notification)
-        return START_NOT_STICKY
+        try {
+            val title = intent?.getStringExtra("title") ?: "照片备份中..."
+            val notification = createNotification(title, "正在备份照片...", 0, 0)
+            
+            // Android 14+ (API 34+) 需要指定前台服务类型
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            return START_NOT_STICKY
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting foreground service", e)
+            stopSelf()
+            return START_NOT_STICKY
+        }
     }
     
     override fun onBind(intent: Intent?): IBinder? = null
