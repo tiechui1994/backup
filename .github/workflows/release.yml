@@ -94,24 +94,25 @@ jobs:
         rm -f app/release.keystore
         rm -f app/keystore.properties
       
+    - name: Build Debug APK (always installable)
+      run: ./gradlew assembleDebug
+      
     - name: Build Release APK (unsigned)
       run: ./gradlew assembleRelease
       
     - name: Build Release AAB (unsigned)
       run: ./gradlew bundleRelease
       
-    - name: Sign APK (if keystore exists)
+    - name: Sign Release APK with release keystore
       if: steps.create_keystore.outputs.keystore_created == 'true'
       run: |
         APK_PATH="app/build/outputs/apk/release/app-release-unsigned.apk"
         if [ ! -f "$APK_PATH" ]; then
-          # Try the default output name
           APK_PATH="app/build/outputs/apk/release/app-release.apk"
         fi
         
         if [ -f "$APK_PATH" ]; then
-          echo "Signing APK: $APK_PATH"
-          # Use same password for store and key (as set during keystore creation)
+          echo "Signing Release APK with release keystore: $APK_PATH"
           jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
             -keystore app/release.keystore \
             -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
@@ -120,25 +121,109 @@ jobs:
             release
           
           # Verify signature
-          jarsigner -verify -verbose -certs "$APK_PATH"
+          jarsigner -verify -verbose -certs "$APK_PATH" || exit 1
           
-          # Align APK (optional but recommended)
+          # Align APK
           if command -v zipalign &> /dev/null; then
             zipalign -v 4 "$APK_PATH" "${APK_PATH%.apk}-aligned.apk"
             mv "${APK_PATH%.apk}-aligned.apk" "$APK_PATH"
           fi
+          
+          echo "Release APK signed successfully"
         else
-          echo "Warning: APK file not found for signing"
+          echo "Warning: Release APK file not found"
         fi
       
-    - name: Upload Release APK
+    - name: Sign Release APK with debug keystore (if no release keystore)
+      if: steps.create_keystore.outputs.keystore_created != 'true'
+      run: |
+        APK_PATH="app/build/outputs/apk/release/app-release-unsigned.apk"
+        if [ ! -f "$APK_PATH" ]; then
+          APK_PATH="app/build/outputs/apk/release/app-release.apk"
+        fi
+        
+        if [ -f "$APK_PATH" ]; then
+          echo "Signing Release APK with debug keystore (for installability): $APK_PATH"
+          
+          # Get debug keystore path (default Android debug keystore location)
+          DEBUG_KEYSTORE="$HOME/.android/debug.keystore"
+          
+          # Create debug keystore if it doesn't exist
+          if [ ! -f "$DEBUG_KEYSTORE" ]; then
+            mkdir -p "$HOME/.android"
+            keytool -genkeypair -v \
+              -keystore "$DEBUG_KEYSTORE" \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          
+          # Sign with debug keystore
+          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+            -keystore "$DEBUG_KEYSTORE" \
+            -storepass android \
+            -keypass android \
+            "$APK_PATH" \
+            androiddebugkey
+          
+          # Verify signature
+          jarsigner -verify -verbose -certs "$APK_PATH" || exit 1
+          
+          # Align APK
+          if command -v zipalign &> /dev/null; then
+            zipalign -v 4 "$APK_PATH" "${APK_PATH%.apk}-aligned.apk"
+            mv "${APK_PATH%.apk}-aligned.apk" "$APK_PATH"
+          fi
+          
+          echo "Release APK signed with debug keystore (installable but not for production)"
+        else
+          echo "Warning: Release APK file not found"
+        fi
+      
+    - name: Upload APK and AAB artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: app-release
+        name: installable-apks
         path: |
-          app/build/outputs/**/*.apk
-          app/build/outputs/**/*.aab
-        retention-days: 10
+          app/build/outputs/apk/debug/app-debug.apk
+          app/build/outputs/apk/release/app-release*.apk
+          app/build/outputs/bundle/release/app-release.aab
+        if-no-files-found: warn
+        retention-days: 30
+        
+    - name: Create GitHub Release (if tag)
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          app/build/outputs/apk/debug/app-debug.apk
+          app/build/outputs/apk/release/app-release*.apk
+          app/build/outputs/bundle/release/app-release.aab
+        body: |
+          ## 安装说明
+          
+          ### Debug APK（推荐用于测试）
+          - 下载 `app-debug.apk`
+          - 在手机上启用"未知来源"安装
+          - 直接安装即可
+          
+          ### Release APK
+          - 如果配置了签名密钥，Release APK 已使用发布密钥签名
+          - 如果未配置，Release APK 使用调试密钥签名（仅用于测试）
+          - 下载对应的 APK 文件安装
+          
+          ### AAB（用于 Google Play）
+          - `app-release.aab` 用于上传到 Google Play Store
+          
+          ${{ github.event.inputs.release_notes }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         
 

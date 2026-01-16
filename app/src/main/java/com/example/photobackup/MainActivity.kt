@@ -21,11 +21,11 @@ class MainActivity : AppCompatActivity() {
     
     // 权限请求启动器
     private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.all { it.value }
+        if (allGranted) {
             Toast.makeText(this, "权限已授予", Toast.LENGTH_SHORT).show()
-            setupBackupIfReady()
         } else {
             Toast.makeText(this, "需要权限才能备份照片", Toast.LENGTH_LONG).show()
         }
@@ -33,11 +33,17 @@ class MainActivity : AppCompatActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        
-        setupViews()
-        checkPermissionAndSetup()
+        try {
+            binding = ActivityMainBinding.inflate(layoutInflater)
+            setContentView(binding.root)
+            
+            setupViews()
+            // 不在启动时自动检查权限，让用户手动操作
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error in onCreate", e)
+            Toast.makeText(this, "应用初始化失败: ${e.message}", Toast.LENGTH_LONG).show()
+            finish()
+        }
     }
     
     private fun setupViews() {
@@ -72,64 +78,89 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun requestPermission() {
-        val permissions = PermissionHelper.getRequiredPermissions()
-        permissions.forEach { permission ->
-            permissionLauncher.launch(permission)
+        try {
+            val permissions = PermissionHelper.getRequiredPermissions()
+            if (permissions.isNotEmpty()) {
+                permissionLauncher.launch(permissions)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error requesting permission", e)
+            Toast.makeText(this, "请求权限失败: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
     
     private fun setupBackupIfReady() {
-        val backupFolder = binding.etBackupFolder.text.toString().trim()
-        val backupDestination = binding.etBackupDestination.text.toString().trim()
-        
-        if (backupFolder.isEmpty()) {
-            Toast.makeText(this, "请输入要备份的照片文件夹路径", Toast.LENGTH_SHORT).show()
-            return
+        try {
+            if (!::binding.isInitialized) {
+                Toast.makeText(this, "界面未初始化", Toast.LENGTH_SHORT).show()
+                return
+            }
+            
+            val backupFolder = binding.etBackupFolder.text.toString().trim()
+            val backupDestination = binding.etBackupDestination.text.toString().trim()
+            
+            if (backupFolder.isEmpty()) {
+                Toast.makeText(this, "请输入要备份的照片文件夹路径", Toast.LENGTH_SHORT).show()
+                return
+            }
+            
+            if (backupDestination.isEmpty()) {
+                Toast.makeText(this, "请输入备份目标目录路径", Toast.LENGTH_SHORT).show()
+                return
+            }
+            
+            val intervalHours = binding.etIntervalHours.text.toString().toLongOrNull() ?: 24L
+            
+            val config = PhotoBackupManager.BackupConfig(
+                backupFolder = backupFolder,
+                backupDestination = backupDestination,
+                intervalHours = intervalHours,
+                requiresNetwork = binding.cbRequiresNetwork.isChecked,
+                requiresCharging = binding.cbRequiresCharging.isChecked
+            )
+            
+            backupManager.setupPeriodicBackup(config)
+            Toast.makeText(this, "定时备份任务已启动", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error setting up backup", e)
+            Toast.makeText(this, "启动备份失败: ${e.message}", Toast.LENGTH_LONG).show()
         }
-        
-        if (backupDestination.isEmpty()) {
-            Toast.makeText(this, "请输入备份目标目录路径", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        val intervalHours = binding.etIntervalHours.text.toString().toLongOrNull() ?: 24L
-        
-        val config = PhotoBackupManager.BackupConfig(
-            backupFolder = backupFolder,
-            backupDestination = backupDestination,
-            intervalHours = intervalHours,
-            requiresNetwork = binding.cbRequiresNetwork.isChecked,
-            requiresCharging = binding.cbRequiresCharging.isChecked
-        )
-        
-        backupManager.setupPeriodicBackup(config)
-        Toast.makeText(this, "定时备份任务已启动", Toast.LENGTH_SHORT).show()
     }
     
     private fun triggerTestBackup() {
-        val backupFolder = binding.etBackupFolder.text.toString().trim()
-        val backupDestination = binding.etBackupDestination.text.toString().trim()
-        
-        if (backupFolder.isEmpty()) {
-            Toast.makeText(this, "请输入要备份的照片文件夹路径", Toast.LENGTH_SHORT).show()
-            return
+        try {
+            if (!::binding.isInitialized) {
+                Toast.makeText(this, "界面未初始化", Toast.LENGTH_SHORT).show()
+                return
+            }
+            
+            val backupFolder = binding.etBackupFolder.text.toString().trim()
+            val backupDestination = binding.etBackupDestination.text.toString().trim()
+            
+            if (backupFolder.isEmpty()) {
+                Toast.makeText(this, "请输入要备份的照片文件夹路径", Toast.LENGTH_SHORT).show()
+                return
+            }
+            
+            if (backupDestination.isEmpty()) {
+                Toast.makeText(this, "请输入备份目标目录路径", Toast.LENGTH_SHORT).show()
+                return
+            }
+            
+            val config = PhotoBackupManager.BackupConfig(
+                backupFolder = backupFolder,
+                backupDestination = backupDestination,
+                intervalHours = 24,
+                requiresNetwork = binding.cbRequiresNetwork.isChecked,
+                requiresCharging = false
+            )
+            
+            backupManager.triggerBackupNow(config)
+            Toast.makeText(this, "已触发备份任务", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error triggering backup", e)
+            Toast.makeText(this, "触发备份失败: ${e.message}", Toast.LENGTH_LONG).show()
         }
-        
-        if (backupDestination.isEmpty()) {
-            Toast.makeText(this, "请输入备份目标目录路径", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        val config = PhotoBackupManager.BackupConfig(
-            backupFolder = backupFolder,
-            backupDestination = backupDestination,
-            intervalHours = 24,
-            requiresNetwork = binding.cbRequiresNetwork.isChecked,
-            requiresCharging = false
-        )
-        
-        backupManager.triggerBackupNow(config)
-        Toast.makeText(this, "已触发备份任务", Toast.LENGTH_SHORT).show()
     }
 }
 
