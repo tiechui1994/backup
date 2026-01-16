@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.photobackup.MainActivity
 import com.example.photobackup.R
@@ -19,6 +20,7 @@ import com.example.photobackup.R
 class PhotoBackupForegroundService : Service() {
     
     companion object {
+        private const val TAG = "PhotoBackupService"
         const val CHANNEL_ID = "photo_backup_channel"
         const val NOTIFICATION_ID = 1001
         
