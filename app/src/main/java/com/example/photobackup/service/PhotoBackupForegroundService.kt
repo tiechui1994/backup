@@ -19,8 +19,8 @@ import com.example.photobackup.R
 class PhotoBackupForegroundService : Service() {
     
     companion object {
-        private const val CHANNEL_ID = "photo_backup_channel"
-        private const val NOTIFICATION_ID = 1001
+        const val CHANNEL_ID = "photo_backup_channel"
+        const val NOTIFICATION_ID = 1001
         
         /**
          * 启动前台服务

@@ -85,7 +85,7 @@ class PhotoBackupManager private constructor(private val context: Context) {
         // 提交工作请求
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             WORK_NAME,
-            ExistingPeriodicWorkPolicy.REPLACE,
+            ExistingPeriodicWorkPolicy.UPDATE,
             workRequest
         )
         

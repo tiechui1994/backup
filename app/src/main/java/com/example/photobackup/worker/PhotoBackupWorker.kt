@@ -1,7 +1,9 @@
 package com.example.photobackup.worker
 
+import android.app.NotificationManager
 import android.content.Context
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -208,10 +210,21 @@ class PhotoBackupWorker(
      */
     private fun updateNotification(title: String, content: String, progress: Int, max: Int) {
         try {
-            val service = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE)
-            if (service is android.app.NotificationManager) {
-                // 这里需要通过 Service 实例更新，简化处理
-                // 实际可以通过 BroadcastReceiver 或 LiveData 更新
+            val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            if (notificationManager != null) {
+                val builder = NotificationCompat.Builder(applicationContext, PhotoBackupForegroundService.CHANNEL_ID)
+                    .setContentTitle(title)
+                    .setContentText(content)
+                    .setSmallIcon(android.R.drawable.ic_menu_upload)
+                    .setOngoing(true)
+                    .setPriority(NotificationCompat.PRIORITY_LOW)
+                
+                if (max > 0) {
+                    builder.setProgress(max, progress, false)
+                }
+                
+                notificationManager.notify(PhotoBackupForegroundService.NOTIFICATION_ID, builder.build())
+                Log.d(TAG, "通知已更新: $title - $content ($progress/$max)")
             }
         } catch (e: Exception) {
             Log.e(TAG, "更新通知失败", e)

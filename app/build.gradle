@@ -19,6 +19,8 @@ android {
     }
 
     // 签名配置（从 keystore.properties 读取，如果存在）
+    // 注意：在 CI/CD 中，我们不在构建时自动签名，而是在构建后手动签名
+    // 这样可以避免使用损坏的 keystore 导致构建失败
     def keystorePropertiesFile = rootProject.file("app/keystore.properties")
     def keystoreProperties = new Properties()
     if (keystorePropertiesFile.exists()) {
@@ -26,12 +28,20 @@ android {
     }
     
     signingConfigs {
-        if (keystorePropertiesFile.exists()) {
-            release {
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
-                storeFile file(keystoreProperties['storeFile'])
-                storePassword keystoreProperties['storePassword']
+        // 仅在本地开发时使用（如果 keystore 存在且有效）
+        if (keystorePropertiesFile.exists() && !System.getenv("CI")) {
+            def keystoreFile = file(keystoreProperties['storeFile'])
+            if (keystoreFile.exists() && keystoreFile.length() > 0) {
+                try {
+                    release {
+                        keyAlias keystoreProperties['keyAlias']
+                        keyPassword keystoreProperties['keyPassword']
+                        storeFile keystoreFile
+                        storePassword keystoreProperties['storePassword']
+                    }
+                } catch (Exception e) {
+                    println "Warning: Could not configure signing: ${e.message}"
+                }
             }
         }
     }
@@ -40,7 +50,9 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            if (keystorePropertiesFile.exists()) {
+            // 在 CI 环境中不自动签名，由 workflow 手动签名
+            // 在本地开发时，如果 keystore 配置有效则自动签名
+            if (!System.getenv("CI") && signingConfigs.hasProperty('release')) {
                 signingConfig signingConfigs.release
             }
         }
