@@ -1,0 +1,95 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: 'Release notes'
+        required: false
+        default: ''
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+        cache: 'gradle'
+        
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+      
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      
+    - name: Create keystore
+      id: create_keystore
+      run: |
+        if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_PASSWORD" ]; then
+          echo "Skipping keystore creation: secrets not configured"
+          echo "keystore_created=false" >> $GITHUB_OUTPUT
+        else
+          keytool -genkeypair -v \
+            -keystore app/release.keystore \
+            -alias release \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" \
+            -dname "CN=PhotoBackup, OU=Development, O=Example, L=City, ST=State, C=US"
+          echo "keystore_created=true" >> $GITHUB_OUTPUT
+        fi
+      env:
+        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      
+    - name: Create keystore properties
+      if: steps.create_keystore.outputs.keystore_created == 'true'
+      run: |
+        echo "storeFile=release.keystore" >> app/keystore.properties
+        echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> app/keystore.properties
+        echo "keyAlias=release" >> app/keystore.properties
+        echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> app/keystore.properties
+      
+    - name: Build Release APK
+      run: ./gradlew assembleRelease
+      
+    - name: Build Release AAB
+      run: ./gradlew bundleRelease
+      
+    - name: Sign APK
+      if: steps.create_keystore.outputs.keystore_created == 'true'
+      run: |
+        jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+          -keystore app/release.keystore \
+          -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
+          -keypass "${{ secrets.KEY_PASSWORD }}" \
+          app/build/outputs/apk/release/app-release-unsigned.apk \
+          release
+      
+    - name: Upload Release APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release-signed
+        path: app/build/outputs/apk/release/app-release.apk
+        retention-days: 10
+        
+    - name: Upload Release AAB
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release-bundle
+        path: app/build/outputs/bundle/release/app-release.aab
+        retention-days: 10
+        
+

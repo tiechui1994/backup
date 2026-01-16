@@ -1,0 +1,221 @@
+package com.example.photobackup.worker
+
+import android.content.Context
+import android.util.Log
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import androidx.work.workDataOf
+import com.example.photobackup.api.UploadApi
+import com.example.photobackup.data.BackedUpPhoto
+import com.example.photobackup.data.PhotoBackupDatabase
+import com.example.photobackup.service.PhotoBackupForegroundService
+import com.example.photobackup.util.FileHashUtil
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+
+/**
+ * WorkManager Worker，执行照片备份任务
+ * 支持增量备份、异常重试
+ */
+class PhotoBackupWorker(
+    context: Context,
+    params: WorkerParameters
+) : CoroutineWorker(context, params) {
+    
+    companion object {
+        private const val TAG = "PhotoBackupWorker"
+        const val KEY_BACKUP_FOLDER = "backup_folder"
+        const val KEY_BACKUP_DESTINATION = "backup_destination"
+    }
+    
+    private val database = PhotoBackupDatabase.getDatabase(applicationContext)
+    private val dao = database.backedUpPhotoDao()
+    
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        try {
+            // 获取备份配置
+            val backupFolder = inputData.getString(KEY_BACKUP_FOLDER)
+                ?: return@withContext Result.failure(
+                    workDataOf("error" to "备份文件夹未配置")
+                )
+            
+            val backupDestination = inputData.getString(KEY_BACKUP_DESTINATION) ?: ""
+            
+            Log.d(TAG, "开始备份照片，源文件夹: $backupFolder, 目标目录: $backupDestination")
+            
+            // 启动前台服务
+            PhotoBackupForegroundService.startService(applicationContext, "正在备份照片...")
+            
+            // 获取文件夹中的所有图片文件
+            val photoFolder = File(backupFolder)
+            if (!photoFolder.exists() || !photoFolder.isDirectory) {
+                return@withContext Result.failure(
+                    workDataOf("error" to "备份文件夹不存在或不是目录")
+                )
+            }
+            
+            val imageFiles = getImageFiles(photoFolder)
+            Log.d(TAG, "找到 ${imageFiles.size} 个图片文件")
+            
+            var successCount = 0
+            var skipCount = 0
+            var failCount = 0
+            
+            // 遍历处理每个图片文件
+            imageFiles.forEachIndexed { index, file ->
+                try {
+                    // 计算 MD5
+                    val md5 = FileHashUtil.calculateMD5(file)
+                    if (md5 == null) {
+                        Log.w(TAG, "无法计算文件 MD5: ${file.absolutePath}")
+                        failCount++
+                        return@forEachIndexed
+                    }
+                    
+                    // 检查是否已备份
+                    val isBackedUp = dao.isBackedUp(md5)
+                    if (isBackedUp) {
+                        Log.d(TAG, "文件已备份，跳过: ${file.name}")
+                        skipCount++
+                        return@forEachIndexed
+                    }
+                    
+                    // 备份文件到目标目录
+                    val backupSuccess = backupPhoto(file, backupDestination)
+                    
+                    if (backupSuccess) {
+                        // 记录已备份
+                        val backedUpPhoto = BackedUpPhoto(
+                            md5 = md5,
+                            filePath = file.absolutePath,
+                            fileName = file.name,
+                            fileSize = file.length(),
+                            uploadUrl = backupDestination // 保存备份目标目录
+                        )
+                        dao.insert(backedUpPhoto)
+                        successCount++
+                        Log.d(TAG, "备份成功: ${file.name}")
+                    } else {
+                        failCount++
+                        Log.w(TAG, "备份失败: ${file.name}")
+                    }
+                    
+                    // 更新通知进度
+                    updateNotification(
+                        "正在备份照片...",
+                        "已处理 ${index + 1}/${imageFiles.size}",
+                        index + 1,
+                        imageFiles.size
+                    )
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "处理文件失败: ${file.absolutePath}", e)
+                    failCount++
+                }
+            }
+            
+            // 更新最终通知
+            updateNotification(
+                "备份完成",
+                "成功: $successCount, 跳过: $skipCount, 失败: $failCount",
+                0,
+                0
+            )
+            
+            Log.d(TAG, "备份完成 - 成功: $successCount, 跳过: $skipCount, 失败: $failCount")
+            
+            // 延迟后停止前台服务
+            kotlinx.coroutines.delay(3000)
+            PhotoBackupForegroundService.stopService(applicationContext)
+            
+            Result.success(
+                workDataOf(
+                    "success_count" to successCount,
+                    "skip_count" to skipCount,
+                    "fail_count" to failCount
+                )
+            )
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "备份任务失败", e)
+            PhotoBackupForegroundService.stopService(applicationContext)
+            
+            // 如果是网络错误或服务器错误，返回重试结果
+            if (isRetryableError(e)) {
+                Result.retry()
+            } else {
+                Result.failure(workDataOf("error" to e.message))
+            }
+        }
+    }
+    
+    /**
+     * 获取文件夹中的所有图片文件
+     */
+    private fun getImageFiles(folder: File): List<File> {
+        val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "bmp", "webp")
+        val files = mutableListOf<File>()
+        
+        fun traverseDirectory(dir: File) {
+            try {
+                dir.listFiles()?.forEach { file ->
+                    if (file.isDirectory) {
+                        traverseDirectory(file)
+                    } else if (file.isFile) {
+                        val extension = file.extension.lowercase()
+                        if (imageExtensions.contains(extension)) {
+                            files.add(file)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "遍历目录失败: ${dir.absolutePath}", e)
+            }
+        }
+        
+        traverseDirectory(folder)
+        return files
+    }
+    
+    /**
+     * 备份照片到本地目录
+     * 支持文件复制和异常处理
+     */
+    private suspend fun backupPhoto(file: File, backupDestination: String): Boolean {
+        return try {
+            UploadApi.backupPhoto(file, backupDestination)
+        } catch (e: Exception) {
+            Log.e(TAG, "备份文件失败: ${file.absolutePath}", e)
+            false
+        }
+    }
+    
+    /**
+     * 判断错误是否可重试
+     * 对于本地文件备份，IO 错误和权限错误通常不可重试
+     */
+    private fun isRetryableError(e: Exception): Boolean {
+        val message = e.message?.lowercase() ?: ""
+        // 本地备份通常不需要重试，除非是临时性的 IO 错误
+        // 可以根据实际需求调整重试策略
+        return message.contains("temporary") || 
+               message.contains("retry")
+    }
+    
+    /**
+     * 更新通知
+     */
+    private fun updateNotification(title: String, content: String, progress: Int, max: Int) {
+        try {
+            val service = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE)
+            if (service is android.app.NotificationManager) {
+                // 这里需要通过 Service 实例更新，简化处理
+                // 实际可以通过 BroadcastReceiver 或 LiveData 更新
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "更新通知失败", e)
+        }
+    }
+}
+
