@@ -49,85 +49,121 @@ class PhotoBackupManager private constructor(private val context: Context) {
      * @param config 备份配置
      */
     fun setupPeriodicBackup(config: BackupConfig) {
-        Log.d(TAG, "设置定时备份任务: $config")
-        
-        // 构建约束条件
-        val constraints = Constraints.Builder()
-            .apply {
-                if (config.requiresNetwork) {
-                    setRequiredNetworkType(NetworkType.CONNECTED)
-                } else {
-                    setRequiredNetworkType(NetworkType.NOT_REQUIRED)
-                }
-                if (config.requiresCharging) {
-                    setRequiresCharging(true)
-                }
+        try {
+            Log.d(TAG, "设置定时备份任务: $config")
+            
+            // 确保 WorkManager 已初始化
+            val workManager = try {
+                WorkManager.getInstance(context)
+            } catch (e: IllegalStateException) {
+                Log.e(TAG, "WorkManager not initialized", e)
+                throw IllegalStateException("WorkManager 未初始化，请稍后重试", e)
             }
-            .build()
-        
-        // 构建工作数据
-        val inputData = workDataOf(
-            PhotoBackupWorker.KEY_BACKUP_FOLDER to config.backupFolder,
-            PhotoBackupWorker.KEY_BACKUP_DESTINATION to config.backupDestination
-        )
-        
-        // 创建周期性工作请求
-        // 注意：PeriodicWorkRequest 的最小间隔是 15 分钟
-        val workRequest = PeriodicWorkRequestBuilder<PhotoBackupWorker>(
-            config.intervalHours.coerceAtLeast(1),
-            TimeUnit.HOURS
-        )
-            .setConstraints(constraints)
-            .setInputData(inputData)
-            .addTag(WORK_NAME)
-            .build()
-        
-        // 提交工作请求
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            WORK_NAME,
-            ExistingPeriodicWorkPolicy.UPDATE,
-            workRequest
-        )
-        
-        Log.d(TAG, "定时备份任务已启动，间隔: ${config.intervalHours} 小时")
+            
+            // 构建约束条件
+            val constraints = Constraints.Builder()
+                .apply {
+                    if (config.requiresNetwork) {
+                        setRequiredNetworkType(NetworkType.CONNECTED)
+                    } else {
+                        setRequiredNetworkType(NetworkType.NOT_REQUIRED)
+                    }
+                    if (config.requiresCharging) {
+                        setRequiresCharging(true)
+                    }
+                }
+                .build()
+            
+            // 构建工作数据
+            val inputData = workDataOf(
+                PhotoBackupWorker.KEY_BACKUP_FOLDER to config.backupFolder,
+                PhotoBackupWorker.KEY_BACKUP_DESTINATION to config.backupDestination
+            )
+            
+            // 创建周期性工作请求
+            // 注意：PeriodicWorkRequest 的最小间隔是 15 分钟
+            val workRequest = PeriodicWorkRequestBuilder<PhotoBackupWorker>(
+                config.intervalHours.coerceAtLeast(1),
+                TimeUnit.HOURS
+            )
+                .setConstraints(constraints)
+                .setInputData(inputData)
+                .addTag(WORK_NAME)
+                .build()
+            
+            // 提交工作请求
+            workManager.enqueueUniquePeriodicWork(
+                WORK_NAME,
+                ExistingPeriodicWorkPolicy.UPDATE,
+                workRequest
+            )
+            
+            Log.d(TAG, "定时备份任务已启动，间隔: ${config.intervalHours} 小时")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up periodic backup", e)
+            throw e
+        }
     }
     
     /**
      * 取消定时备份任务
      */
     fun cancelPeriodicBackup() {
-        Log.d(TAG, "取消定时备份任务")
-        WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+        try {
+            Log.d(TAG, "取消定时备份任务")
+            val workManager = try {
+                WorkManager.getInstance(context)
+            } catch (e: IllegalStateException) {
+                Log.e(TAG, "WorkManager not initialized", e)
+                return
+            }
+            workManager.cancelUniqueWork(WORK_NAME)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error canceling backup", e)
+        }
     }
     
     /**
      * 立即执行一次备份任务（用于测试）
      */
     fun triggerBackupNow(config: BackupConfig) {
-        Log.d(TAG, "立即触发备份任务")
-        
-        val constraints = Constraints.Builder()
-            .apply {
-                if (config.requiresNetwork) {
-                    setRequiredNetworkType(NetworkType.CONNECTED)
-                } else {
-                    setRequiredNetworkType(NetworkType.NOT_REQUIRED)
-                }
+        try {
+            Log.d(TAG, "立即触发备份任务")
+            
+            // 确保 WorkManager 已初始化
+            val workManager = try {
+                WorkManager.getInstance(context)
+            } catch (e: IllegalStateException) {
+                Log.e(TAG, "WorkManager not initialized", e)
+                throw IllegalStateException("WorkManager 未初始化，请稍后重试", e)
             }
-            .build()
-        
-        val inputData = workDataOf(
-            PhotoBackupWorker.KEY_BACKUP_FOLDER to config.backupFolder,
-            PhotoBackupWorker.KEY_BACKUP_DESTINATION to config.backupDestination
-        )
-        
-        val workRequest = androidx.work.OneTimeWorkRequestBuilder<PhotoBackupWorker>()
-            .setConstraints(constraints)
-            .setInputData(inputData)
-            .addTag("photo_backup_onetime")
-            .build()
-        
-        WorkManager.getInstance(context).enqueue(workRequest)
+            
+            val constraints = Constraints.Builder()
+                .apply {
+                    if (config.requiresNetwork) {
+                        setRequiredNetworkType(NetworkType.CONNECTED)
+                    } else {
+                        setRequiredNetworkType(NetworkType.NOT_REQUIRED)
+                    }
+                }
+                .build()
+            
+            val inputData = workDataOf(
+                PhotoBackupWorker.KEY_BACKUP_FOLDER to config.backupFolder,
+                PhotoBackupWorker.KEY_BACKUP_DESTINATION to config.backupDestination
+            )
+            
+            val workRequest = androidx.work.OneTimeWorkRequestBuilder<PhotoBackupWorker>()
+                .setConstraints(constraints)
+                .setInputData(inputData)
+                .addTag("photo_backup_onetime")
+                .build()
+            
+            workManager.enqueue(workRequest)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error triggering backup", e)
+            throw e
+        }
     }
 }
 

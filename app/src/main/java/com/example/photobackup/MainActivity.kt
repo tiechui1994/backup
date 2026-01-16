@@ -17,17 +17,23 @@ import kotlinx.coroutines.launch
 class MainActivity : AppCompatActivity() {
     
     private lateinit var binding: ActivityMainBinding
-    private val backupManager = PhotoBackupManager.getInstance(this)
+    private val backupManager: PhotoBackupManager by lazy {
+        PhotoBackupManager.getInstance(this)
+    }
     
     // 权限请求启动器
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val allGranted = permissions.all { it.value }
-        if (allGranted) {
-            Toast.makeText(this, "权限已授予", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, "需要权限才能备份照片", Toast.LENGTH_LONG).show()
+        try {
+            val allGranted = permissions.all { it.value }
+            if (allGranted) {
+                Toast.makeText(this, "权限已授予", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "需要权限才能备份照片", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error in permission callback", e)
         }
     }
     
