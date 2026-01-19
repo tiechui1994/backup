@@ -57,9 +57,14 @@ class PhotoBackupForegroundService : Service() {
             val title = intent?.getStringExtra("title") ?: "照片备份中..."
             val notification = createNotification(title, "正在备份照片...", 0, 0)
             
-            // Android 14+ (API 34+) 需要指定前台服务类型
-            if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            // Android 10+ (API 29+) 建议指定前台服务类型
+            // Android 14+ (API 34+) 强制要求指定前台服务类型
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID, 
+                    notification, 
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }

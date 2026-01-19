@@ -104,14 +104,29 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun checkPermission(): Boolean {
-        return PermissionHelper.hasReadMediaImagesPermission(this)
+        val hasMediaPermission = PermissionHelper.hasReadMediaImagesPermission(this)
+        val hasNotificationPermission = PermissionHelper.hasNotificationPermission(this)
+        val hasAllFilesPermission = PermissionHelper.hasAllFilesAccessPermission()
+        
+        return hasMediaPermission && hasNotificationPermission && hasAllFilesPermission
     }
     
     private fun requestPermission() {
         try {
+            // 1. 先请求常规运行时权限 (媒体访问、通知)
             val permissions = PermissionHelper.getRequiredPermissions()
-            if (permissions.isNotEmpty()) {
-                permissionLauncher.launch(permissions)
+            val missingPermissions = permissions.filter {
+                ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+            }
+
+            if (missingPermissions.isNotEmpty()) {
+                permissionLauncher.launch(missingPermissions.toTypedArray())
+            } 
+            
+            // 2. 如果是 Android 11+，且没有全文件访问权限，引导去设置页
+            if (!PermissionHelper.hasAllFilesAccessPermission()) {
+                Toast.makeText(this, "由于 Android 系统限制，请授予所有文件访问权限以进行备份", Toast.LENGTH_LONG).show()
+                PermissionHelper.requestAllFilesAccessPermission(this)
             }
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Error requesting permission", e)
