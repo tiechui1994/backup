@@ -45,6 +45,13 @@ object SyncHelper {
         ContentResolver.setIsSyncable(account, AUTHORITY, 1)
         ContentResolver.setSyncAutomatically(account, AUTHORITY, true)
 
+        // 避免重复添加导致“时间改了但不生效”（系统会保留旧的 periodic sync）
+        try {
+            ContentResolver.removePeriodicSync(account, AUTHORITY, Bundle.EMPTY)
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "removePeriodicSync 失败（可忽略）: ${e.message}")
+        }
+
         // 3. 设置定期同步 (单位为秒)
         // 即使应用被杀死，系统也会尝试按此频率拉起同步服务
         val intervalSeconds = intervalMinutes * 60

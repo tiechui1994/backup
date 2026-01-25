@@ -1,27 +1,43 @@
 package com.example.photobackup
 
-import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
+import com.google.android.material.chip.Chip
 import com.example.photobackup.databinding.ActivityMainBinding
 import com.example.photobackup.manager.PhotoBackupManager
 import com.example.photobackup.sync.SyncHelper
 import com.example.photobackup.util.AppLogger
 import com.example.photobackup.util.AutostartHelper
 import com.example.photobackup.util.PermissionHelper
-import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     
     private lateinit var binding: ActivityMainBinding
     private val backupManager: PhotoBackupManager by lazy {
         PhotoBackupManager.getInstance(this)
+    }
+
+    private val prefs by lazy {
+        getSharedPreferences("photo_backup_prefs", Context.MODE_PRIVATE)
+    }
+
+    private val selectedBackupFolders = mutableListOf<String>()
+
+    private companion object {
+        private const val PREF_BACKUP_FOLDERS = "backup_folders"
+        private const val PREF_BACKUP_DESTINATION = "backup_destination"
+        private const val PREF_INTERVAL_MINUTES = "interval_minutes"
+        private const val PREF_REQUIRES_NETWORK = "requires_network"
+        private const val PREF_REQUIRES_CHARGING = "requires_charging"
+        private const val PREF_SYNC_INTERVAL_MINUTES = "sync_interval_minutes"
     }
     
     // 权限请求启动器
@@ -47,11 +63,14 @@ class MainActivity : AppCompatActivity() {
             
             binding = ActivityMainBinding.inflate(layoutInflater)
             setContentView(binding.root)
-            
+
+            restoreUiState()
+            setupFolderUi()
             setupViews()
-            
-            // 初始化账号同步机制 (默认 60 分钟)
-            SyncHelper.setupSync(this, 60)
+
+            // 初始化账号同步机制（使用上次设置；没有则默认 60 分钟）
+            val syncInterval = prefs.getLong(PREF_SYNC_INTERVAL_MINUTES, 60L).coerceAtLeast(15L)
+            SyncHelper.setupSync(this, syncInterval)
             
             // 检查自启动和关联启动权限
             checkAutostartAndBattery()
@@ -117,6 +136,102 @@ class MainActivity : AppCompatActivity() {
             AppLogger.d("MainActivity", "按钮事件绑定完成")
         } catch (e: Exception) {
             AppLogger.e("MainActivity", "setupViews 失败", e)
+        }
+    }
+
+    private fun restoreUiState() {
+        try {
+            val savedFolders = prefs.getString(PREF_BACKUP_FOLDERS, "") ?: ""
+            val folders = parseFolders(savedFolders)
+            setSelectedBackupFolders(folders)
+
+            binding.etBackupDestination.setText(prefs.getString(PREF_BACKUP_DESTINATION, binding.etBackupDestination.text?.toString() ?: "") ?: "")
+            val intervalMinutes = prefs.getLong(PREF_INTERVAL_MINUTES, 1440L)
+            binding.etIntervalMinutes.setText(intervalMinutes.toString())
+
+            binding.cbRequiresNetwork.isChecked = prefs.getBoolean(PREF_REQUIRES_NETWORK, false)
+            binding.cbRequiresCharging.isChecked = prefs.getBoolean(PREF_REQUIRES_CHARGING, false)
+
+            val syncIntervalMinutes = prefs.getLong(PREF_SYNC_INTERVAL_MINUTES, 60L)
+            binding.etSyncIntervalMinutes.setText(syncIntervalMinutes.toString())
+        } catch (e: Exception) {
+            AppLogger.e("MainActivity", "恢复界面状态失败", e)
+        }
+    }
+
+    private fun saveUiState(
+        backupFolders: List<String>,
+        backupDestination: String,
+        intervalMinutes: Lon,
+        requiresNetwork: Boolean,
+        requiresCharging: Boolean,
+        syncIntervalMinutes: Long
+    ) {
+        prefs.edit()
+            .putString(PREF_BACKUP_FOLDERS, backupFolders.joinToString("\n"))
+            .putString(PREF_BACKUP_DESTINATION, backupDestination)
+            .putLong(PREF_INTERVAL_MINUTES, intervalMinutes)
+            .putBoolean(PREF_REQUIRES_NETWORK, requiresNetwork)
+            .putBoolean(PREF_REQUIRES_CHARGING, requiresCharging)
+            .putLong(PREF_SYNC_INTERVAL_MINUTES, syncIntervalMinutes)
+            .apply()
+    }
+
+    private fun setupFolderUi() {
+        binding.btnAddBackupFolder.setOnClickListener {
+            val input = EditText(this).apply {
+                hint = "/storage/emulated/0/DCIM/Camera"
+            }
+            AlertDialog.Builder(this)
+                .setTitle("添加备份文件夹")
+                .setMessage("请输入要备份的文件夹路径（可多次添加）")
+                .setView(input)
+                .setPositiveButton("添加") { _, _ ->
+                    val path = input.text?.toString()?.trim().orEmpty()
+                    if (path.isNotEmpty()) {
+                        val next = (selectedBackupFolders + path).distinct()
+                        setSelectedBackupFolders(next)
+                    } else {
+                        Toast.makeText(this, "文件夹路径不能为空", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        }
+    }
+
+    private fun parseFolders(raw: String): List<String> {
+        return raw
+            .split(Regex("[,，\\n;；]"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+    }
+
+    private fun setSelectedBackupFolders(folders: List<String>) {
+        selectedBackupFolders.clear()
+        selectedBackupFolders.addAll(folders)
+        // 同步到输入框，便于用户复制/粘贴、也便于旧逻辑继续工作
+        binding.etBackupFolder.setText(selectedBackupFolders.joinToString("\n"))
+        renderFolderChips()
+    }
+
+    private fun renderFolderChips() {
+        try {
+            binding.chipgroupBackupFolders.removeAllViews()
+            selectedBackupFolders.forEach { folder ->
+                val chip = Chip(this).apply {
+                    text = folder
+                    isCloseIconVisible = true
+                    setOnCloseIconClickListener {
+                        val next = selectedBackupFolders.filterNot { it == folder }
+                        setSelectedBackupFolders(next)
+                    }
+                }
+                binding.chipgroupBackupFolders.addView(chip)
+            }
+        } catch (e: Exception) {
+            AppLogger.e("MainActivity", "渲染文件夹 Chip 失败", e)
         }
     }
 
@@ -188,16 +303,25 @@ class MainActivity : AppCompatActivity() {
             AppLogger.init(backupDestination)
             
             // 解析多文件夹路径
-            val backupFolders = backupFoldersStr.split(Regex("[,，]")).map { it.trim() }.filter { it.isNotEmpty() }
+            val backupFolders = parseFolders(backupFoldersStr)
             if (backupFolders.isEmpty()) {
                 AppLogger.w("MainActivity", "解析后的文件夹列表为空")
                 Toast.makeText(this, "请输入有效的文件夹路径", Toast.LENGTH_SHORT).show()
                 return
             }
+
+            // 规范化并回显到 chips / 输入框
+            setSelectedBackupFolders(backupFolders)
             
             AppLogger.d("MainActivity", "解析备份文件夹成功: $backupFolders, 目标: $backupDestination")
             
-            val intervalMinutes = binding.etIntervalHours.text.toString().toLongOrNull() ?: 1440L
+            // 注意：界面输入的是“分钟”
+            val intervalMinutes = (binding.etIntervalMinutes.text.toString().toLongOrNull() ?: 1440L)
+                .coerceAtLeast(15L)
+
+            // 账号同步间隔（分钟）；留空则跟随备份间隔
+            val syncIntervalText = binding.etSyncIntervalMinutes.text?.toString()?.trim().orEmpty()
+            val syncIntervalMinutes = (syncIntervalText.toLongOrNull() ?: intervalMinutes).coerceAtLeast(15L)
             
             val config = PhotoBackupManager.BackupConfig(
                 backupFolders = backupFolders,
@@ -209,8 +333,17 @@ class MainActivity : AppCompatActivity() {
             
             backupManager.setupPeriodicBackup(config)
             
-            // 同步账号的间隔也跟备份间隔保持一致（或设为固定值）
-            SyncHelper.setupSync(this, intervalMinutes)
+            // 同步账号的间隔可单独设置
+            SyncHelper.setupSync(this, syncIntervalMinutes)
+
+            saveUiState(
+                backupFolders = backupFolders,
+                backupDestination = backupDestination,
+                intervalMinutes = intervalMinutes,
+                requiresNetwork = binding.cbRequiresNetwork.isChecked,
+                requiresCharging = binding.cbRequiresCharging.isChecked,
+                syncIntervalMinutes = syncIntervalMinutes
+            )
             
             Toast.makeText(this, "定时备份任务已启动", Toast.LENGTH_SHORT).show()
             AppLogger.d("MainActivity", "定时备份任务与账号同步已配置完毕")
@@ -244,7 +377,12 @@ class MainActivity : AppCompatActivity() {
             // 初始化日志
             AppLogger.init(backupDestination)
             
-            val backupFolders = backupFoldersStr.split(Regex("[,，]")).map { it.trim() }.filter { it.isNotEmpty() }
+            val backupFolders = parseFolders(backupFoldersStr)
+            if (backupFolders.isEmpty()) {
+                Toast.makeText(this, "请输入有效的文件夹路径", Toast.LENGTH_SHORT).show()
+                return
+            }
+            setSelectedBackupFolders(backupFolders)
             
             val config = PhotoBackupManager.BackupConfig(
                 backupFolders = backupFolders,

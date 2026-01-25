@@ -24,16 +24,32 @@
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="要备份的照片文件夹路径"
+            android:hint="要备份的照片文件夹路径（可多个，逗号/换行分隔）"
             android:layout_marginBottom="16dp">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/et_backup_folder"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="text"
+                android:inputType="textMultiLine"
+                android:minLines="2"
                 android:text="/storage/emulated/0/DCIM/Camera" />
         </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chipgroup_backup_folders"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            app:singleLine="false"
+            app:singleSelection="false" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_add_backup_folder"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="选择备份文件夹"
+            android:layout_marginBottom="16dp" />
 
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
@@ -52,15 +68,29 @@
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="备份间隔（小时）"
+            android:hint="备份间隔（分钟）"
             android:layout_marginBottom="16dp">
 
             <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/et_interval_hours"
+                android:id="@+id/et_interval_minutes"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="number"
-                android:text="24" />
+                android:text="1440" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="账号同步间隔（分钟，留空=跟随备份间隔）"
+            android:layout_marginBottom="16dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_sync_interval_minutes"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="number"
+                android:text="60" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.checkbox.MaterialCheckBox
@@ -102,7 +132,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="使用说明：\n1. 输入要备份的照片文件夹路径（源目录）\n2. 输入备份目标目录路径（文件将复制到此目录）\n3. 设置备份间隔（小时）\n4. 点击启动定时备份\n5. 系统会自动在后台执行备份任务\n\n注意：\n- 已备份的文件（通过 MD5 校验）会自动跳过\n- 如果目标目录中文件已存在，会自动添加时间戳\n- 本地备份不需要网络连接"
+            android:text="使用说明：\n1. 输入要备份的照片文件夹路径（源目录）\n2. 输入备份目标目录路径（文件将复制到此目录）\n3. 设置备份间隔（分钟）\n4. 点击启动定时备份\n5. 系统会自动在后台执行备份任务\n\n注意：\n- 已备份的文件（通过 MD5 校验）会自动跳过\n- 如果目标目录中文件已存在，会自动添加时间戳\n- 本地备份不需要网络连接"
             android:textSize="14sp"
             android:textColor="@android:color/darker_gray"
             android:padding="16dp"
