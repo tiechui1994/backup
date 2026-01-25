@@ -42,6 +42,11 @@ jobs:
       
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
+
+    - name: Install Android build-tools (for apksigner/zipalign)
+      run: |
+        sdkmanager --install "platform-tools" "build-tools;34.0.0"
+        sdkmanager --list_installed | sed -n '1,200p'
       
     - name: Decode release keystore (required for upgrade install)
       run: |
@@ -77,25 +82,45 @@ jobs:
         
         if [ -f "$APK_PATH" ]; then
           echo "Signing Release APK with release keystore: $APK_PATH"
-          # Align first
-          if command -v zipalign &> /dev/null; then
-            zipalign -v 4 "$APK_PATH" "${APK_PATH%.apk}-aligned.apk"
-            mv "${APK_PATH%.apk}-aligned.apk" "$APK_PATH"
-          fi
-
-          # Prefer apksigner (v2/v3 signature)
-          if command -v apksigner &> /dev/null; then
-            apksigner sign \
-              --ks app/release.keystore \
-              --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
-              --ks-pass pass:"${{ secrets.KEYSTORE_PASSWORD }}" \
-              --key-pass pass:"${{ secrets.KEY_PASSWORD }}" \
-              "$APK_PATH"
-            apksigner verify --verbose "$APK_PATH"
-          else
-            echo "ERROR: apksigner not found. Please ensure Android build-tools are available."
+          # Resolve build-tools binaries (they may not be on PATH)
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
+          if [ -z "$ANDROID_SDK_ROOT" ]; then
+            echo "ERROR: ANDROID_SDK_ROOT/ANDROID_HOME not set"
             exit 1
           fi
+
+          ZIPALIGN_BIN="$(command -v zipalign || true)"
+          APKSIGNER_BIN="$(command -v apksigner || true)"
+
+          if [ -z "$ZIPALIGN_BIN" ]; then
+            ZIPALIGN_BIN="$(ls -1 "$ANDROID_SDK_ROOT"/build-tools/*/zipalign 2>/dev/null | sort -V | tail -n 1 || true)"
+          fi
+          if [ -z "$APKSIGNER_BIN" ]; then
+            APKSIGNER_BIN="$(ls -1 "$ANDROID_SDK_ROOT"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -n 1 || true)"
+          fi
+
+          if [ -z "$APKSIGNER_BIN" ]; then
+            echo "ERROR: apksigner not found. Ensure build-tools are installed."
+            ls -la "$ANDROID_SDK_ROOT"/build-tools || true
+            exit 1
+          fi
+
+          # Align first (recommended before signing)
+          if [ -n "$ZIPALIGN_BIN" ]; then
+            "$ZIPALIGN_BIN" -v 4 "$APK_PATH" "${APK_PATH%.apk}-aligned.apk"
+            mv "${APK_PATH%.apk}-aligned.apk" "$APK_PATH"
+          else
+            echo "Warning: zipalign not found; continuing without zipalign"
+          fi
+
+          # Sign (v2/v3)
+          "$APKSIGNER_BIN" sign \
+            --ks app/release.keystore \
+            --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
+            --ks-pass pass:"${{ secrets.KEYSTORE_PASSWORD }}" \
+            --key-pass pass:"${{ secrets.KEY_PASSWORD }}" \
+            "$APK_PATH"
+          "$APKSIGNER_BIN" verify --verbose "$APK_PATH"
 
           echo "Release APK signed successfully"
         else
