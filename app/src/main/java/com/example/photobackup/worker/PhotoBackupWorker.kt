@@ -28,7 +28,7 @@ class PhotoBackupWorker(
     
     companion object {
         private const val TAG = "PhotoBackupWorker"
-        const val KEY_BACKUP_FOLDER = "backup_folder"
+        const val KEY_BACKUP_FOLDERS = "backup_folders" // 修改为支持多文件夹
         const val KEY_BACKUP_DESTINATION = "backup_destination"
     }
     
@@ -38,11 +38,12 @@ class PhotoBackupWorker(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
             // 获取备份配置
-            val backupFolder = inputData.getString(KEY_BACKUP_FOLDER)
+            val foldersString = inputData.getString(KEY_BACKUP_FOLDERS)
                 ?: return@withContext Result.failure(
                     workDataOf("error" to "备份文件夹未配置")
                 )
             
+            val backupFolders = foldersString.split(",").filter { it.isNotEmpty() }
             val backupDestination = inputData.getString(KEY_BACKUP_DESTINATION) ?: ""
             
             // 初始化日志落地
@@ -50,34 +51,36 @@ class PhotoBackupWorker(
                 AppLogger.init(backupDestination)
             }
             
-            AppLogger.d(TAG, "开始备份照片，源文件夹: $backupFolder, 目标目录: $backupDestination")
+            AppLogger.d(TAG, "开始执行备份任务，涉及 ${backupFolders.size} 个文件夹, 目标目录: $backupDestination")
             
             // 启动前台服务
             PhotoBackupForegroundService.startService(applicationContext, "正在备份照片...")
             
-            // 获取文件夹中的所有图片文件
-            val photoFolder = File(backupFolder)
-            if (!photoFolder.exists() || !photoFolder.isDirectory) {
-                AppLogger.e(TAG, "备份文件夹不存在或不是目录: $backupFolder")
-                return@withContext Result.failure(
-                    workDataOf("error" to "备份文件夹不存在或不是目录")
-                )
+            val allImageFiles = mutableListOf<File>()
+            backupFolders.forEach { folderPath ->
+                val folder = File(folderPath)
+                if (folder.exists() && folder.isDirectory) {
+                    val files = getImageFiles(folder)
+                    allImageFiles.addAll(files)
+                    AppLogger.d(TAG, "扫描文件夹: $folderPath, 找到图片数量: ${files.size}")
+                } else {
+                    AppLogger.w(TAG, "文件夹不存在或无效，跳过: $folderPath")
+                }
             }
             
-            val imageFiles = getImageFiles(photoFolder)
-            AppLogger.d(TAG, "找到 ${imageFiles.size} 个图片文件")
+            AppLogger.d(TAG, "所有待处理图片总数: ${allImageFiles.size}")
             
             var successCount = 0
             var skipCount = 0
             var failCount = 0
             
             // 遍历处理每个图片文件
-            imageFiles.forEachIndexed { index, file ->
+            allImageFiles.forEachIndexed { index, file ->
                 try {
                     // 计算 MD5
                     val md5 = FileHashUtil.calculateMD5(file)
                     if (md5 == null) {
-                        AppLogger.w(TAG, "无法计算文件 MD5: ${file.absolutePath}")
+                        AppLogger.w(TAG, "无法计算文件 MD5，跳过: ${file.absolutePath}")
                         failCount++
                         return@forEachIndexed
                     }
@@ -85,7 +88,7 @@ class PhotoBackupWorker(
                     // 检查是否已备份
                     val isBackedUp = dao.isBackedUp(md5)
                     if (isBackedUp) {
-                        AppLogger.d(TAG, "文件已备份，跳过: ${file.name}")
+                        AppLogger.d(TAG, "文件已备份，跳过: ${file.name} (MD5: $md5)")
                         skipCount++
                         return@forEachIndexed
                     }
@@ -100,39 +103,39 @@ class PhotoBackupWorker(
                             filePath = file.absolutePath,
                             fileName = file.name,
                             fileSize = file.length(),
-                            uploadUrl = backupDestination // 保存备份目标目录
+                            uploadUrl = backupDestination
                         )
                         dao.insert(backedUpPhoto)
                         successCount++
-                        AppLogger.d(TAG, "备份成功: ${file.name}")
+                        AppLogger.d(TAG, "备份成功 [${index + 1}/${allImageFiles.size}]: ${file.name}")
                     } else {
                         failCount++
-                        AppLogger.w(TAG, "备份失败: ${file.name}")
+                        AppLogger.w(TAG, "备份失败 [${index + 1}/${allImageFiles.size}]: ${file.name}")
                     }
                     
                     // 更新通知进度
                     updateNotification(
                         "正在备份照片...",
-                        "已处理 ${index + 1}/${imageFiles.size}",
+                        "已处理 ${index + 1}/${allImageFiles.size} (成功:$successCount, 失败:$failCount)",
                         index + 1,
-                        imageFiles.size
+                        allImageFiles.size
                     )
                     
                 } catch (e: Exception) {
-                    AppLogger.e(TAG, "处理文件失败: ${file.absolutePath}", e)
+                    AppLogger.e(TAG, "处理文件时发生意外异常: ${file.absolutePath}", e)
                     failCount++
                 }
             }
             
             // 更新最终通知
             updateNotification(
-                "备份完成",
-                "成功: $successCount, 跳过: $skipCount, 失败: $failCount",
+                "备份任务结束",
+                "完成处理 ${allImageFiles.size} 张照片。成功:$successCount, 跳过:$skipCount, 失败:$failCount",
                 0,
                 0
             )
             
-            AppLogger.d(TAG, "备份完成 - 成功: $successCount, 跳过: $skipCount, 失败: $failCount")
+            AppLogger.d(TAG, "备份工作执行完毕 - 最终统计: 成功=$successCount, 跳过=$skipCount, 失败=$failCount")
             
             // 延迟后停止前台服务
             kotlinx.coroutines.delay(3000)
@@ -147,11 +150,11 @@ class PhotoBackupWorker(
             )
             
         } catch (e: Exception) {
-            AppLogger.e(TAG, "备份任务失败", e)
+            AppLogger.e(TAG, "备份任务严重错误导致中断", e)
             PhotoBackupForegroundService.stopService(applicationContext)
             
-            // 如果是网络错误或服务器错误，返回重试结果
             if (isRetryableError(e)) {
+                AppLogger.d(TAG, "任务标记为可重试")
                 Result.retry()
             } else {
                 Result.failure(workDataOf("error" to e.message))

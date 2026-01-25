@@ -37,10 +37,10 @@ class PhotoBackupManager private constructor(private val context: Context) {
      * 备份配置
      */
     data class BackupConfig(
-        val backupFolder: String, // 源文件夹（要备份的照片所在目录）
-        val backupDestination: String = "", // 备份目标目录（用户自定义）
-        val intervalHours: Long = 24, // 默认 24 小时执行一次
-        val requiresNetwork: Boolean = false, // 本地备份不需要网络
+        val backupFolders: List<String>, // 源文件夹列表
+        val backupDestination: String = "", // 备份目标目录
+        val intervalMinutes: Long = 1440, // 默认 1440 分钟（24小时）执行一次
+        val requiresNetwork: Boolean = false,
         val requiresCharging: Boolean = false
     )
     
@@ -56,7 +56,7 @@ class PhotoBackupManager private constructor(private val context: Context) {
             val workManager = try {
                 WorkManager.getInstance(context)
             } catch (e: IllegalStateException) {
-                AppLogger.e(TAG, "WorkManager not initialized", e)
+                AppLogger.e(TAG, "WorkManager 未初始化", e)
                 throw IllegalStateException("WorkManager 未初始化，请稍后重试", e)
             }
             
@@ -74,17 +74,18 @@ class PhotoBackupManager private constructor(private val context: Context) {
                 }
                 .build()
             
-            // 构建工作数据
+            // 构建工作数据 - 将文件夹列表转换为逗号分隔的字符串传递给 Worker
+            val foldersString = config.backupFolders.joinToString(",")
             val inputData = workDataOf(
-                PhotoBackupWorker.KEY_BACKUP_FOLDER to config.backupFolder,
+                PhotoBackupWorker.KEY_BACKUP_FOLDERS to foldersString,
                 PhotoBackupWorker.KEY_BACKUP_DESTINATION to config.backupDestination
             )
             
             // 创建周期性工作请求
             // 注意：PeriodicWorkRequest 的最小间隔是 15 分钟
             val workRequest = PeriodicWorkRequestBuilder<PhotoBackupWorker>(
-                config.intervalHours.coerceAtLeast(1),
-                TimeUnit.HOURS
+                config.intervalMinutes.coerceAtLeast(15),
+                TimeUnit.MINUTES
             )
                 .setConstraints(constraints)
                 .setInputData(inputData)
@@ -98,9 +99,9 @@ class PhotoBackupManager private constructor(private val context: Context) {
                 workRequest
             )
             
-            AppLogger.d(TAG, "定时备份任务已启动，间隔: ${config.intervalHours} 小时")
+            AppLogger.d(TAG, "定时备份任务已成功提交，间隔: ${config.intervalMinutes} 分钟, 文件夹数量: ${config.backupFolders.size}")
         } catch (e: Exception) {
-            AppLogger.e(TAG, "Error setting up periodic backup", e)
+            AppLogger.e(TAG, "启动定时备份失败", e)
             throw e
         }
     }
@@ -110,16 +111,17 @@ class PhotoBackupManager private constructor(private val context: Context) {
      */
     fun cancelPeriodicBackup() {
         try {
-            AppLogger.d(TAG, "取消定时备份任务")
+            AppLogger.d(TAG, "收到取消定时备份任务指令")
             val workManager = try {
                 WorkManager.getInstance(context)
             } catch (e: IllegalStateException) {
-                AppLogger.e(TAG, "WorkManager not initialized", e)
+                AppLogger.e(TAG, "WorkManager 未初始化，取消失败", e)
                 return
             }
             workManager.cancelUniqueWork(WORK_NAME)
+            AppLogger.d(TAG, "定时备份任务已取消")
         } catch (e: Exception) {
-            AppLogger.e(TAG, "Error canceling backup", e)
+            AppLogger.e(TAG, "取消备份任务时发生异常", e)
         }
     }
     
@@ -128,13 +130,13 @@ class PhotoBackupManager private constructor(private val context: Context) {
      */
     fun triggerBackupNow(config: BackupConfig) {
         try {
-            AppLogger.d(TAG, "立即触发备份任务")
+            AppLogger.d(TAG, "手动触发立即备份任务: foldersCount=${config.backupFolders.size}")
             
             // 确保 WorkManager 已初始化
             val workManager = try {
                 WorkManager.getInstance(context)
             } catch (e: IllegalStateException) {
-                AppLogger.e(TAG, "WorkManager not initialized", e)
+                AppLogger.e(TAG, "WorkManager 未初始化，触发失败", e)
                 throw IllegalStateException("WorkManager 未初始化，请稍后重试", e)
             }
             
@@ -148,8 +150,9 @@ class PhotoBackupManager private constructor(private val context: Context) {
                 }
                 .build()
             
+            val foldersString = config.backupFolders.joinToString(",")
             val inputData = workDataOf(
-                PhotoBackupWorker.KEY_BACKUP_FOLDER to config.backupFolder,
+                PhotoBackupWorker.KEY_BACKUP_FOLDERS to foldersString,
                 PhotoBackupWorker.KEY_BACKUP_DESTINATION to config.backupDestination
             )
             
@@ -160,8 +163,9 @@ class PhotoBackupManager private constructor(private val context: Context) {
                 .build()
             
             workManager.enqueue(workRequest)
+            AppLogger.d(TAG, "立即备份任务已提交到队列")
         } catch (e: Exception) {
-            AppLogger.e(TAG, "Error triggering backup", e)
+            AppLogger.e(TAG, "手动触发备份任务失败", e)
             throw e
         }
     }
