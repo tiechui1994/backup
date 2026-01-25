@@ -11,6 +11,7 @@ import com.example.photobackup.api.UploadApi
 import com.example.photobackup.data.BackedUpPhoto
 import com.example.photobackup.data.PhotoBackupDatabase
 import com.example.photobackup.service.PhotoBackupForegroundService
+import com.example.photobackup.util.AppLogger
 import com.example.photobackup.util.FileHashUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -44,7 +45,12 @@ class PhotoBackupWorker(
             
             val backupDestination = inputData.getString(KEY_BACKUP_DESTINATION) ?: ""
             
-            Log.d(TAG, "开始备份照片，源文件夹: $backupFolder, 目标目录: $backupDestination")
+            // 初始化日志落地
+            if (backupDestination.isNotEmpty()) {
+                AppLogger.init(backupDestination)
+            }
+            
+            AppLogger.d(TAG, "开始备份照片，源文件夹: $backupFolder, 目标目录: $backupDestination")
             
             // 启动前台服务
             PhotoBackupForegroundService.startService(applicationContext, "正在备份照片...")
@@ -52,13 +58,14 @@ class PhotoBackupWorker(
             // 获取文件夹中的所有图片文件
             val photoFolder = File(backupFolder)
             if (!photoFolder.exists() || !photoFolder.isDirectory) {
+                AppLogger.e(TAG, "备份文件夹不存在或不是目录: $backupFolder")
                 return@withContext Result.failure(
                     workDataOf("error" to "备份文件夹不存在或不是目录")
                 )
             }
             
             val imageFiles = getImageFiles(photoFolder)
-            Log.d(TAG, "找到 ${imageFiles.size} 个图片文件")
+            AppLogger.d(TAG, "找到 ${imageFiles.size} 个图片文件")
             
             var successCount = 0
             var skipCount = 0
@@ -70,7 +77,7 @@ class PhotoBackupWorker(
                     // 计算 MD5
                     val md5 = FileHashUtil.calculateMD5(file)
                     if (md5 == null) {
-                        Log.w(TAG, "无法计算文件 MD5: ${file.absolutePath}")
+                        AppLogger.w(TAG, "无法计算文件 MD5: ${file.absolutePath}")
                         failCount++
                         return@forEachIndexed
                     }
@@ -78,7 +85,7 @@ class PhotoBackupWorker(
                     // 检查是否已备份
                     val isBackedUp = dao.isBackedUp(md5)
                     if (isBackedUp) {
-                        Log.d(TAG, "文件已备份，跳过: ${file.name}")
+                        AppLogger.d(TAG, "文件已备份，跳过: ${file.name}")
                         skipCount++
                         return@forEachIndexed
                     }
@@ -97,10 +104,10 @@ class PhotoBackupWorker(
                         )
                         dao.insert(backedUpPhoto)
                         successCount++
-                        Log.d(TAG, "备份成功: ${file.name}")
+                        AppLogger.d(TAG, "备份成功: ${file.name}")
                     } else {
                         failCount++
-                        Log.w(TAG, "备份失败: ${file.name}")
+                        AppLogger.w(TAG, "备份失败: ${file.name}")
                     }
                     
                     // 更新通知进度
@@ -112,7 +119,7 @@ class PhotoBackupWorker(
                     )
                     
                 } catch (e: Exception) {
-                    Log.e(TAG, "处理文件失败: ${file.absolutePath}", e)
+                    AppLogger.e(TAG, "处理文件失败: ${file.absolutePath}", e)
                     failCount++
                 }
             }
@@ -125,7 +132,7 @@ class PhotoBackupWorker(
                 0
             )
             
-            Log.d(TAG, "备份完成 - 成功: $successCount, 跳过: $skipCount, 失败: $failCount")
+            AppLogger.d(TAG, "备份完成 - 成功: $successCount, 跳过: $skipCount, 失败: $failCount")
             
             // 延迟后停止前台服务
             kotlinx.coroutines.delay(3000)
@@ -140,7 +147,7 @@ class PhotoBackupWorker(
             )
             
         } catch (e: Exception) {
-            Log.e(TAG, "备份任务失败", e)
+            AppLogger.e(TAG, "备份任务失败", e)
             PhotoBackupForegroundService.stopService(applicationContext)
             
             // 如果是网络错误或服务器错误，返回重试结果
@@ -172,7 +179,7 @@ class PhotoBackupWorker(
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "遍历目录失败: ${dir.absolutePath}", e)
+                AppLogger.e(TAG, "遍历目录失败: ${dir.absolutePath}", e)
             }
         }
         
@@ -188,7 +195,7 @@ class PhotoBackupWorker(
         return try {
             UploadApi.backupPhoto(file, backupDestination)
         } catch (e: Exception) {
-            Log.e(TAG, "备份文件失败: ${file.absolutePath}", e)
+            AppLogger.e(TAG, "备份文件失败: ${file.absolutePath}", e)
             false
         }
     }
@@ -224,10 +231,10 @@ class PhotoBackupWorker(
                 }
                 
                 notificationManager.notify(PhotoBackupForegroundService.NOTIFICATION_ID, builder.build())
-                Log.d(TAG, "通知已更新: $title - $content ($progress/$max)")
+                AppLogger.d(TAG, "通知已更新: $title - $content ($progress/$max)")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "更新通知失败", e)
+            AppLogger.e(TAG, "更新通知失败", e)
         }
     }
 }

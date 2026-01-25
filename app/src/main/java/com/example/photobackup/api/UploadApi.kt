@@ -1,6 +1,6 @@
 package com.example.photobackup.api
 
-import android.util.Log
+import com.example.photobackup.util.AppLogger
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -22,7 +22,7 @@ object UploadApi {
     suspend fun backupPhoto(sourceFile: File, backupDestination: String): Boolean {
         return try {
             if (backupDestination.isEmpty()) {
-                Log.d(TAG, "未配置备份目标目录，仅记录到本地数据库: ${sourceFile.name}")
+                AppLogger.d(TAG, "未配置备份目标目录，仅记录到本地数据库: ${sourceFile.name}")
                 return true
             }
             
@@ -32,19 +32,19 @@ object UploadApi {
             if (!destDir.exists()) {
                 val created = destDir.mkdirs()
                 if (!created) {
-                    Log.e(TAG, "无法创建备份目录: $backupDestination")
+                    AppLogger.e(TAG, "无法创建备份目录: $backupDestination")
                     return false
                 }
             }
             
             if (!destDir.isDirectory) {
-                Log.e(TAG, "备份目标路径不是目录: $backupDestination")
+                AppLogger.e(TAG, "备份目标路径不是目录: $backupDestination")
                 return false
             }
             
             // 检查是否有写入权限
             if (!destDir.canWrite()) {
-                Log.e(TAG, "备份目录无写入权限: $backupDestination")
+                AppLogger.e(TAG, "备份目录无写入权限: $backupDestination")
                 return false
             }
             
@@ -67,20 +67,20 @@ object UploadApi {
                 }
             }
             
-            Log.d(TAG, "备份成功: ${sourceFile.name} -> ${finalDestFile.absolutePath}")
+            AppLogger.d(TAG, "备份成功: ${sourceFile.name} -> ${finalDestFile.absolutePath}")
             true
             
         } catch (e: java.io.FileNotFoundException) {
-            Log.e(TAG, "文件未找到: ${sourceFile.absolutePath}", e)
+            AppLogger.e(TAG, "文件未找到: ${sourceFile.absolutePath}", e)
             false
         } catch (e: java.io.IOException) {
-            Log.e(TAG, "IO 错误: ${sourceFile.absolutePath}", e)
+            AppLogger.e(TAG, "IO 错误: ${sourceFile.absolutePath}", e)
             false
         } catch (e: SecurityException) {
-            Log.e(TAG, "权限错误: ${sourceFile.absolutePath}", e)
+            AppLogger.e(TAG, "权限错误: ${sourceFile.absolutePath}", e)
             false
         } catch (e: Exception) {
-            Log.e(TAG, "备份文件失败: ${sourceFile.absolutePath}", e)
+            AppLogger.e(TAG, "备份文件失败: ${sourceFile.absolutePath}", e)
             false
         }
     }

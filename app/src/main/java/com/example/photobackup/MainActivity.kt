@@ -11,6 +11,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.photobackup.databinding.ActivityMainBinding
 import com.example.photobackup.manager.PhotoBackupManager
+import com.example.photobackup.sync.SyncHelper
+import com.example.photobackup.util.AppLogger
 import com.example.photobackup.util.PermissionHelper
 import kotlinx.coroutines.launch
 
@@ -33,32 +35,36 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "需要权限才能备份照片", Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error in permission callback", e)
+            AppLogger.e("MainActivity", "Error in permission callback", e)
         }
     }
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
-            android.util.Log.d("MainActivity", "onCreate started")
+            AppLogger.d("MainActivity", "onCreate started")
             
             binding = ActivityMainBinding.inflate(layoutInflater)
             setContentView(binding.root)
             
-            android.util.Log.d("MainActivity", "View binding completed")
+            AppLogger.d("MainActivity", "View binding completed")
             
             setupViews()
-            android.util.Log.d("MainActivity", "Views setup completed")
+            AppLogger.d("MainActivity", "Views setup completed")
+            
+            // 初始化账号同步机制 (拉活保活)
+            SyncHelper.setupSync(this)
+            AppLogger.d("MainActivity", "SyncHelper setup completed")
             
             // 不在启动时自动检查权限，让用户手动操作
-            android.util.Log.d("MainActivity", "onCreate completed successfully")
+            AppLogger.d("MainActivity", "onCreate completed successfully")
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Fatal error in onCreate", e)
+            AppLogger.e("MainActivity", "Fatal error in onCreate", e)
             e.printStackTrace()
             try {
                 Toast.makeText(this, "应用初始化失败: ${e.message}", Toast.LENGTH_LONG).show()
             } catch (toastException: Exception) {
-                android.util.Log.e("MainActivity", "Failed to show error toast", toastException)
+                AppLogger.e("MainActivity", "Failed to show error toast", toastException)
             }
             finish()
         }
@@ -75,7 +81,7 @@ class MainActivity : AppCompatActivity() {
                     backupManager.cancelPeriodicBackup()
                     Toast.makeText(this, "已停止备份任务", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
-                    android.util.Log.e("MainActivity", "Error stopping backup", e)
+                    AppLogger.e("MainActivity", "Error stopping backup", e)
                     Toast.makeText(this, "停止备份失败", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -88,9 +94,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             
-            android.util.Log.d("MainActivity", "All views setup completed")
+            AppLogger.d("MainActivity", "All views setup completed")
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error setting up views", e)
+            AppLogger.e("MainActivity", "Error setting up views", e)
             e.printStackTrace()
         }
     }
@@ -129,7 +135,7 @@ class MainActivity : AppCompatActivity() {
                 PermissionHelper.requestAllFilesAccessPermission(this)
             }
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error requesting permission", e)
+            AppLogger.e("MainActivity", "Error requesting permission", e)
             Toast.makeText(this, "请求权限失败: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
@@ -154,6 +160,9 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             
+            // 初始化日志
+            AppLogger.init(backupDestination)
+            
             val intervalHours = binding.etIntervalHours.text.toString().toLongOrNull() ?: 24L
             
             val config = PhotoBackupManager.BackupConfig(
@@ -167,7 +176,7 @@ class MainActivity : AppCompatActivity() {
             backupManager.setupPeriodicBackup(config)
             Toast.makeText(this, "定时备份任务已启动", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error setting up backup", e)
+            AppLogger.e("MainActivity", "Error setting up backup", e)
             Toast.makeText(this, "启动备份失败: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
@@ -192,6 +201,9 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             
+            // 初始化日志
+            AppLogger.init(backupDestination)
+            
             val config = PhotoBackupManager.BackupConfig(
                 backupFolder = backupFolder,
                 backupDestination = backupDestination,
@@ -203,7 +215,7 @@ class MainActivity : AppCompatActivity() {
             backupManager.triggerBackupNow(config)
             Toast.makeText(this, "已触发备份任务", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error triggering backup", e)
+            AppLogger.e("MainActivity", "Error triggering backup", e)
             Toast.makeText(this, "触发备份失败: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }

@@ -1,13 +1,13 @@
 package com.example.photobackup.manager
 
 import android.content.Context
-import android.util.Log
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.example.photobackup.util.AppLogger
 import com.example.photobackup.worker.PhotoBackupWorker
 import java.util.concurrent.TimeUnit
 
@@ -50,13 +50,13 @@ class PhotoBackupManager private constructor(private val context: Context) {
      */
     fun setupPeriodicBackup(config: BackupConfig) {
         try {
-            Log.d(TAG, "设置定时备份任务: $config")
+            AppLogger.d(TAG, "设置定时备份任务: $config")
             
             // 确保 WorkManager 已初始化
             val workManager = try {
                 WorkManager.getInstance(context)
             } catch (e: IllegalStateException) {
-                Log.e(TAG, "WorkManager not initialized", e)
+                AppLogger.e(TAG, "WorkManager not initialized", e)
                 throw IllegalStateException("WorkManager 未初始化，请稍后重试", e)
             }
             
@@ -98,9 +98,9 @@ class PhotoBackupManager private constructor(private val context: Context) {
                 workRequest
             )
             
-            Log.d(TAG, "定时备份任务已启动，间隔: ${config.intervalHours} 小时")
+            AppLogger.d(TAG, "定时备份任务已启动，间隔: ${config.intervalHours} 小时")
         } catch (e: Exception) {
-            Log.e(TAG, "Error setting up periodic backup", e)
+            AppLogger.e(TAG, "Error setting up periodic backup", e)
             throw e
         }
     }
@@ -110,16 +110,16 @@ class PhotoBackupManager private constructor(private val context: Context) {
      */
     fun cancelPeriodicBackup() {
         try {
-            Log.d(TAG, "取消定时备份任务")
+            AppLogger.d(TAG, "取消定时备份任务")
             val workManager = try {
                 WorkManager.getInstance(context)
             } catch (e: IllegalStateException) {
-                Log.e(TAG, "WorkManager not initialized", e)
+                AppLogger.e(TAG, "WorkManager not initialized", e)
                 return
             }
             workManager.cancelUniqueWork(WORK_NAME)
         } catch (e: Exception) {
-            Log.e(TAG, "Error canceling backup", e)
+            AppLogger.e(TAG, "Error canceling backup", e)
         }
     }
     
@@ -128,13 +128,13 @@ class PhotoBackupManager private constructor(private val context: Context) {
      */
     fun triggerBackupNow(config: BackupConfig) {
         try {
-            Log.d(TAG, "立即触发备份任务")
+            AppLogger.d(TAG, "立即触发备份任务")
             
             // 确保 WorkManager 已初始化
             val workManager = try {
                 WorkManager.getInstance(context)
             } catch (e: IllegalStateException) {
-                Log.e(TAG, "WorkManager not initialized", e)
+                AppLogger.e(TAG, "WorkManager not initialized", e)
                 throw IllegalStateException("WorkManager 未初始化，请稍后重试", e)
             }
             
@@ -161,7 +161,7 @@ class PhotoBackupManager private constructor(private val context: Context) {
             
             workManager.enqueue(workRequest)
         } catch (e: Exception) {
-            Log.e(TAG, "Error triggering backup", e)
+            AppLogger.e(TAG, "Error triggering backup", e)
             throw e
         }
     }

@@ -28,6 +28,13 @@
     <!-- 前台服务类型（Android 14+） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+    <!-- 账号同步相关权限 -->
+    <uses-permission android:name="android.permission.AUTHENTICATE_ACCOUNTS" />
+    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
+    <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
+    <uses-permission android:name="android.permission.WRITE_SYNC_SETTINGS" />
+    <uses-permission android:name="android.permission.READ_SYNC_STATS" />
+
     <application
         android:name=".PhotoBackupApplication"
         android:allowBackup="true"
@@ -62,7 +69,39 @@
                 <data android:scheme="android_secret_code" android:host="1234" />
             </intent-filter>
         </receiver>
-        
+
+        <!-- 账号同步: 身份验证服务 -->
+        <service
+            android:name=".sync.StubAuthenticatorService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.accounts.AccountAuthenticator" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accounts.AccountAuthenticator"
+                android:resource="@xml/authenticator" />
+        </service>
+
+        <!-- 账号同步: 同步服务 -->
+        <service
+            android:name=".sync.StubSyncService"
+            android:exported="true"
+            android:process=":sync">
+            <intent-filter>
+                <action android:name="android.content.SyncAdapter" />
+            </intent-filter>
+            <meta-data
+                android:name="android.content.SyncAdapter"
+                android:resource="@xml/sync_adapter" />
+        </service>
+
+        <!-- 账号同步: 必须提供一个 ContentProvider -->
+        <provider
+            android:name=".sync.StubProvider"
+            android:authorities="com.example.photobackup.provider"
+            android:exported="false"
+            android:syncable="true" />
+
         <!-- 前台服务 -->
         <service
             android:name=".service.PhotoBackupForegroundService"
