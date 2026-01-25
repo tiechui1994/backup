@@ -1,10 +1,12 @@
 package com.example.photobackup
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.widget.EditText
+import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -162,7 +164,7 @@ class MainActivity : AppCompatActivity() {
     private fun saveUiState(
         backupFolders: List<String>,
         backupDestination: String,
-        intervalMinutes: Lon,
+        intervalMinutes: Long,
         requiresNetwork: Boolean,
         requiresCharging: Boolean,
         syncIntervalMinutes: Long
@@ -179,24 +181,55 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupFolderUi() {
         binding.btnAddBackupFolder.setOnClickListener {
-            val input = EditText(this).apply {
-                hint = "/storage/emulated/0/DCIM/Camera"
+            folderPickerLauncher.launch(null)
+        }
+    }
+
+    // 文件夹选择器（系统文件管理器）
+    private val folderPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        try {
+            if (uri == null) return@registerForActivityResult
+
+            // 尝试持久化权限（避免下次失效）
+            try {
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                contentResolver.takePersistableUriPermission(uri, flags)
+            } catch (e: Exception) {
+                AppLogger.w("MainActivity", "takePersistableUriPermission 失败（可忽略）: ${e.message}")
             }
-            AlertDialog.Builder(this)
-                .setTitle("添加备份文件夹")
-                .setMessage("请输入要备份的文件夹路径（可多次添加）")
-                .setView(input)
-                .setPositiveButton("添加") { _, _ ->
-                    val path = input.text?.toString()?.trim().orEmpty()
-                    if (path.isNotEmpty()) {
-                        val next = (selectedBackupFolders + path).distinct()
-                        setSelectedBackupFolders(next)
-                    } else {
-                        Toast.makeText(this, "文件夹路径不能为空", Toast.LENGTH_SHORT).show()
-                    }
+
+            val path = resolveTreeUriToPath(uri)
+            if (path.isNullOrBlank()) {
+                Toast.makeText(this, "暂不支持该位置，请选择主存储(内部存储)的文件夹", Toast.LENGTH_LONG).show()
+                AppLogger.w("MainActivity", "无法将 TreeUri 转换为真实路径: $uri")
+                return@registerForActivityResult
+            }
+
+            val next = (selectedBackupFolders + path).distinct()
+            setSelectedBackupFolders(next)
+        } catch (e: Exception) {
+            AppLogger.e("MainActivity", "处理文件夹选择结果失败", e)
+            Toast.makeText(this, "选择文件夹失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * 将 SAF TreeUri 尽可能转换为真实文件路径（只支持主存储 primary:xxx）
+     * 例：content://.../tree/primary%3ADCIM%2FCamera -> /storage/emulated/0/DCIM/Camera
+     */
+    private fun resolveTreeUriToPath(uri: Uri): String? {
+        return try {
+            val docId = DocumentsContract.getTreeDocumentId(uri) // e.g. "primary:DCIM/Camera"
+            when {
+                docId.startsWith("primary:") -> {
+                    val rel = docId.removePrefix("primary:").trimStart('/')
+                    if (rel.isEmpty()) "/storage/emulated/0" else "/storage/emulated/0/$rel"
                 }
-                .setNegativeButton("取消", null)
-                .show()
+                else -> null
+            }
+        } catch (e: Exception) {
+            AppLogger.w("MainActivity", "resolveTreeUriToPath 异常: ${e.message}")
+            null
         }
     }
 
