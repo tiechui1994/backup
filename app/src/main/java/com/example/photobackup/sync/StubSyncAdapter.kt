@@ -2,8 +2,7 @@ package com.example.photobackup.sync
 
 import android.accounts.Account
 import android.content.AbstractThreadedSyncAdapter
-import android.content.ContentProvider
-import android.content.ContentResolver
+import android.content.ContentProviderClient
 import android.content.Context
 import android.content.SyncResult
 import android.os.Bundle
@@ -23,7 +22,7 @@ class StubSyncAdapter @JvmOverloads constructor(
         account: Account?,
         extras: Bundle?,
         authority: String?,
-        provider: ContentProvider?,
+        provider: ContentProviderClient?,
         syncResult: SyncResult?
     ) {
         Log.d("StubSyncAdapter", "onPerformSync: 系统触发了同步，应用已激活")
