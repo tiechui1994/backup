@@ -71,7 +71,8 @@ class MainActivity : AppCompatActivity() {
             setupViews()
 
             // 初始化账号同步机制（使用上次设置；没有则默认 60 分钟）
-            val syncInterval = prefs.getLong(PREF_SYNC_INTERVAL_MINUTES, 60L).coerceAtLeast(15L)
+            // 不再对最小间隔做 15 分钟限制（由系统自行调度/裁剪）
+            val syncInterval = prefs.getLong(PREF_SYNC_INTERVAL_MINUTES, 60L)
             SyncHelper.setupSync(this, syncInterval)
             
             // 检查自启动和关联启动权限

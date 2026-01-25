@@ -4,7 +4,12 @@ import android.app.NotificationManager
 import android.content.Context
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.example.photobackup.api.UploadApi
@@ -30,6 +35,12 @@ class PhotoBackupWorker(
         private const val TAG = "PhotoBackupWorker"
         const val KEY_BACKUP_FOLDERS = "backup_folders" // 修改为支持多文件夹
         const val KEY_BACKUP_DESTINATION = "backup_destination"
+        const val KEY_INTERVAL_MINUTES = "interval_minutes"
+        const val KEY_REQUIRES_NETWORK = "requires_network"
+        const val KEY_REQUIRES_CHARGING = "requires_charging"
+
+        // 循环 OneTimeWork 的 unique work name（需与 Manager 一致）
+        private const val WORK_NAME_LOOP = "photo_backup_work_loop"
     }
     
     private val database = PhotoBackupDatabase.getDatabase(applicationContext)
@@ -45,6 +56,9 @@ class PhotoBackupWorker(
             
             val backupFolders = foldersString.split(",").filter { it.isNotEmpty() }
             val backupDestination = inputData.getString(KEY_BACKUP_DESTINATION) ?: ""
+            val intervalMinutes = inputData.getLong(KEY_INTERVAL_MINUTES, -1L)
+            val requiresNetwork = inputData.getBoolean(KEY_REQUIRES_NETWORK, false)
+            val requiresCharging = inputData.getBoolean(KEY_REQUIRES_CHARGING, false)
             
             // 初始化日志落地
             if (backupDestination.isNotEmpty()) {
@@ -88,7 +102,6 @@ class PhotoBackupWorker(
                     // 检查是否已备份
                     val isBackedUp = dao.isBackedUp(md5)
                     if (isBackedUp) {
-                        AppLogger.d(TAG, "文件已备份，跳过: ${file.name} (MD5: $md5)")
                         skipCount++
                         return@forEachIndexed
                     }
@@ -107,7 +120,6 @@ class PhotoBackupWorker(
                         )
                         dao.insert(backedUpPhoto)
                         successCount++
-                        AppLogger.d(TAG, "备份成功 [${index + 1}/${allImageFiles.size}]: ${file.name}")
                     } else {
                         failCount++
                         AppLogger.w(TAG, "备份失败 [${index + 1}/${allImageFiles.size}]: ${file.name}")
@@ -140,6 +152,38 @@ class PhotoBackupWorker(
             // 延迟后停止前台服务
             kotlinx.coroutines.delay(3000)
             PhotoBackupForegroundService.stopService(applicationContext)
+
+            // interval < 15 时，使用循环 OneTimeWork 实现“取消最小间隔限制”
+            // 这里在任务结束后追加下一次执行（APPEND 不会取消当前任务）
+            if (intervalMinutes in 1..14) {
+                try {
+                    val constraints = Constraints.Builder().apply {
+                        if (requiresNetwork) setRequiredNetworkType(NetworkType.CONNECTED)
+                        if (requiresCharging) setRequiresCharging(true)
+                    }.build()
+
+                    val nextInput = workDataOf(
+                        KEY_BACKUP_FOLDERS to foldersString,
+                        KEY_BACKUP_DESTINATION to backupDestination,
+                        KEY_INTERVAL_MINUTES to intervalMinutes,
+                        KEY_REQUIRES_NETWORK to requiresNetwork,
+                        KEY_REQUIRES_CHARGING to requiresCharging
+                    )
+
+                    val next = OneTimeWorkRequestBuilder<PhotoBackupWorker>()
+                        .setConstraints(constraints)
+                        .setInputData(nextInput)
+                        .setInitialDelay(intervalMinutes, java.util.concurrent.TimeUnit.MINUTES)
+                        .addTag(WORK_NAME_LOOP)
+                        .build()
+
+                    WorkManager.getInstance(applicationContext)
+                        .enqueueUniqueWork(WORK_NAME_LOOP, ExistingWorkPolicy.APPEND, next)
+                    AppLogger.d(TAG, "已追加下一次循环备份任务，间隔: $intervalMinutes 分钟")
+                } catch (e: Exception) {
+                    AppLogger.e(TAG, "追加下一次循环备份任务失败", e)
+                }
+            }
             
             Result.success(
                 workDataOf(
