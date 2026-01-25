@@ -12,8 +12,11 @@ android {
         applicationId "com.example.photobackup"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        // CI 可通过环境变量覆盖版本号，保证每次构建都有递增的 versionCode（便于覆盖安装升级）
+        def envVersionCode = System.getenv("VERSION_CODE")
+        def envVersionName = System.getenv("VERSION_NAME")
+        versionCode (envVersionCode != null ? Integer.parseInt(envVersionCode) : 1)
+        versionName (envVersionName != null ? envVersionName : "1.0")
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
