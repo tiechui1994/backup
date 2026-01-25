@@ -13,6 +13,7 @@ import com.example.photobackup.databinding.ActivityMainBinding
 import com.example.photobackup.manager.PhotoBackupManager
 import com.example.photobackup.sync.SyncHelper
 import com.example.photobackup.util.AppLogger
+import com.example.photobackup.util.AutostartHelper
 import com.example.photobackup.util.PermissionHelper
 import kotlinx.coroutines.launch
 
@@ -56,6 +57,9 @@ class MainActivity : AppCompatActivity() {
             SyncHelper.setupSync(this)
             AppLogger.d("MainActivity", "SyncHelper setup completed")
             
+            // 检查自启动和关联启动权限
+            checkAutostartAndBattery()
+            
             // 不在启动时自动检查权限，让用户手动操作
             AppLogger.d("MainActivity", "onCreate completed successfully")
         } catch (e: Exception) {
@@ -70,6 +74,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    private fun checkAutostartAndBattery() {
+        if (!AutostartHelper.isIgnoringBatteryOptimizations(this)) {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("需要后台保活权限")
+                .setMessage("为了保证备份任务在后台正常运行，请允许应用“忽略电池优化”并开启“自启动/关联启动”权限。")
+                .setPositiveButton("前往设置") { _, _ ->
+                    AutostartHelper.requestIgnoreBatteryOptimizations(this)
+                    AutostartHelper.openAutoStartSettings(this)
+                }
+                .setNegativeButton("稍后再说", null)
+                .show()
+        }
+    }
+
     private fun setupViews() {
         try {
             binding.btnStartBackup.setOnClickListener {
