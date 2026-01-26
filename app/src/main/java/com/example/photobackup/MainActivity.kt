@@ -33,6 +33,15 @@ class MainActivity : AppCompatActivity() {
 
     private val selectedBackupFolders = mutableListOf<String>()
 
+    private enum class PendingAction {
+        NONE,
+        CONFIGURE_SYNC,
+        START_PERIODIC_BACKUP,
+        TRIGGER_TEST_BACKUP
+    }
+
+    private var pendingAction: PendingAction = PendingAction.NONE
+
     private companion object {
         private const val PREF_BACKUP_FOLDERS = "backup_folders"
         private const val PREF_BACKUP_DESTINATION = "backup_destination"
@@ -53,6 +62,8 @@ class MainActivity : AppCompatActivity() {
             } else {
                 Toast.makeText(this, "需要权限才能备份照片", Toast.LENGTH_LONG).show()
             }
+            // 双重检查：权限回调后再跑一次前置校验，满足则继续挂起动作
+            handlePendingAction()
         } catch (e: Exception) {
             AppLogger.e("MainActivity", "Error in permission callback", e)
         }
@@ -70,10 +81,9 @@ class MainActivity : AppCompatActivity() {
             setupFolderUi()
             setupViews()
 
-            // 初始化账号同步机制（使用上次设置；没有则默认 60 分钟）
-            // 不再对最小间隔做 15 分钟限制（由系统自行调度/裁剪）
-            val syncInterval = prefs.getLong(PREF_SYNC_INTERVAL_MINUTES, 60L)
-            SyncHelper.setupSync(this, syncInterval)
+            // 双重检查：确保存储权限 + 后台保活引导已完成后，再配置账号定时同步
+            pendingAction = PendingAction.CONFIGURE_SYNC
+            handlePendingAction()
             
             // 检查自启动和关联启动权限
             checkAutostartAndBattery()
@@ -89,6 +99,12 @@ class MainActivity : AppCompatActivity() {
             }
             finish()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 双重检查：从设置页返回后再校验一次，满足则继续挂起动作
+        handlePendingAction()
     }
     
     private fun checkAutostartAndBattery() {
@@ -113,7 +129,8 @@ class MainActivity : AppCompatActivity() {
         try {
             binding.btnStartBackup.setOnClickListener {
                 AppLogger.d("MainActivity", "点击 [启动定时备份] 按钮")
-                checkPermissionAndSetup()
+                pendingAction = PendingAction.START_PERIODIC_BACKUP
+                handlePendingAction()
             }
             
             binding.btnStopBackup.setOnClickListener {
@@ -129,11 +146,8 @@ class MainActivity : AppCompatActivity() {
             
             binding.btnTestBackup.setOnClickListener {
                 AppLogger.d("MainActivity", "点击 [测试立即备份] 按钮")
-                if (checkPermission()) {
-                    triggerTestBackup()
-                } else {
-                    requestPermission()
-                }
+                pendingAction = PendingAction.TRIGGER_TEST_BACKUP
+                handlePendingAction()
             }
             
             AppLogger.d("MainActivity", "按钮事件绑定完成")
@@ -149,13 +163,21 @@ class MainActivity : AppCompatActivity() {
             setSelectedBackupFolders(folders)
 
             binding.etBackupDestination.setText(prefs.getString(PREF_BACKUP_DESTINATION, binding.etBackupDestination.text?.toString() ?: "") ?: "")
-            val intervalMinutes = prefs.getLong(PREF_INTERVAL_MINUTES, 1440L)
+            val intervalMinutesRaw = prefs.getLong(PREF_INTERVAL_MINUTES, 1440L)
+            val intervalMinutes = intervalMinutesRaw.coerceAtLeast(15L)
+            if (intervalMinutes != intervalMinutesRaw) {
+                prefs.edit().putLong(PREF_INTERVAL_MINUTES, intervalMinutes).apply()
+            }
             binding.etIntervalMinutes.setText(intervalMinutes.toString())
 
             binding.cbRequiresNetwork.isChecked = prefs.getBoolean(PREF_REQUIRES_NETWORK, false)
             binding.cbRequiresCharging.isChecked = prefs.getBoolean(PREF_REQUIRES_CHARGING, false)
 
-            val syncIntervalMinutes = prefs.getLong(PREF_SYNC_INTERVAL_MINUTES, 60L)
+            val syncIntervalMinutesRaw = prefs.getLong(PREF_SYNC_INTERVAL_MINUTES, 60L)
+            val syncIntervalMinutes = syncIntervalMinutesRaw.coerceAtLeast(15L)
+            if (syncIntervalMinutes != syncIntervalMinutesRaw) {
+                prefs.edit().putLong(PREF_SYNC_INTERVAL_MINUTES, syncIntervalMinutes).apply()
+            }
             binding.etSyncIntervalMinutes.setText(syncIntervalMinutes.toString())
         } catch (e: Exception) {
             AppLogger.e("MainActivity", "恢复界面状态失败", e)
@@ -269,14 +291,64 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun checkPermissionAndSetup() {
-        if (checkPermission()) {
-            setupBackupIfReady()
-        } else {
+    /**
+     * 双重检查：确保关键权限/后台保活状态已满足。
+     * - 存储权限（含 Android 11+ 的所有文件访问）
+     * - 忽略电池优化 + 自启动/关联启动引导
+     *
+     * 注意：自启动/关联启动权限各 ROM 无统一可检测 API，这里通过“引导 + 电池优化白名单状态”做强校验。
+     */
+    private fun ensurePrerequisites(): Boolean {
+        // 1) 存储/通知/所有文件访问
+        if (!checkPermission()) {
             requestPermission()
+            return false
         }
+
+        // 2) 后台保活（电池优化白名单可检测）
+        if (!AutostartHelper.isIgnoringBatteryOptimizations(this)) {
+            AlertDialog.Builder(this)
+                .setTitle("需要后台保活权限")
+                .setMessage(
+                    "为保证“账号定时同步/定时备份”稳定执行，请完成以下设置：\n" +
+                        "1) 允许应用忽略电池优化\n" +
+                        "2) 开启自启动/关联启动（不同手机入口不同）\n\n" +
+                        "完成后返回应用将自动继续配置。"
+                )
+                .setPositiveButton("前往设置") { _, _ ->
+                    AutostartHelper.requestIgnoreBatteryOptimizations(this)
+                    AutostartHelper.openAutoStartSettings(this)
+                }
+                .setNegativeButton("取消") { _, _ ->
+                    pendingAction = PendingAction.NONE
+                }
+                .show()
+            return false
+        }
+
+        return true
     }
-    
+
+    private fun handlePendingAction() {
+        if (pendingAction == PendingAction.NONE) return
+        if (!ensurePrerequisites()) return
+
+        when (pendingAction) {
+            PendingAction.CONFIGURE_SYNC -> {
+                val syncInterval = prefs.getLong(PREF_SYNC_INTERVAL_MINUTES, 60L).coerceAtLeast(15L)
+                SyncHelper.setupSync(this, syncInterval)
+            }
+            PendingAction.START_PERIODIC_BACKUP -> {
+                setupBackupIfReady()
+            }
+            PendingAction.TRIGGER_TEST_BACKUP -> {
+                triggerTestBackup()
+            }
+            PendingAction.NONE -> Unit
+        }
+        pendingAction = PendingAction.NONE
+    }
+
     private fun checkPermission(): Boolean {
         val hasMediaPermission = PermissionHelper.hasReadMediaImagesPermission(this)
         val hasNotificationPermission = PermissionHelper.hasNotificationPermission(this)

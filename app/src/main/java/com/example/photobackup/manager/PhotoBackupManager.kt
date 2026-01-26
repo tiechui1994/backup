@@ -2,11 +2,9 @@ package com.example.photobackup.manager
 
 import android.content.Context
 import androidx.work.Constraints
-import androidx.work.ExistingWorkPolicy
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.example.photobackup.util.AppLogger
@@ -87,48 +85,26 @@ class PhotoBackupManager private constructor(private val context: Context) {
                 PhotoBackupWorker.KEY_REQUIRES_CHARGING to config.requiresCharging
             )
 
-            val intervalMinutes = config.intervalMinutes
-            if (intervalMinutes in 1..14) {
-                // WorkManager 的 PeriodicWorkRequest 最小 15 分钟；为了取消最小间隔限制，
-                // interval < 15 时用“循环 OneTimeWork + 初始延迟”来实现任意分钟间隔。
-                val workRequest = OneTimeWorkRequestBuilder<PhotoBackupWorker>()
-                    .setConstraints(constraints)
-                    .setInputData(inputData)
-                    .setInitialDelay(intervalMinutes, TimeUnit.MINUTES)
-                    .addTag(WORK_NAME_LOOP)
-                    .build()
+            // PeriodicWorkRequest 最小 15 分钟：这里统一限制为 15 分钟
+            val intervalMinutes = config.intervalMinutes.coerceAtLeast(15L)
+            val workRequest = PeriodicWorkRequestBuilder<PhotoBackupWorker>(
+                intervalMinutes,
+                TimeUnit.MINUTES
+            )
+                .setConstraints(constraints)
+                .setInputData(inputData)
+                .addTag(WORK_NAME_PERIODIC)
+                .build()
 
-                workManager.enqueueUniqueWork(
-                    WORK_NAME_LOOP,
-                    ExistingWorkPolicy.REPLACE,
-                    workRequest
-                )
-                // 同时取消可能存在的 periodic 任务，避免重复执行
-                workManager.cancelUniqueWork(WORK_NAME_PERIODIC)
+            workManager.enqueueUniquePeriodicWork(
+                WORK_NAME_PERIODIC,
+                ExistingPeriodicWorkPolicy.UPDATE,
+                workRequest
+            )
+            // 清理旧版本可能残留的循环任务
+            workManager.cancelUniqueWork(WORK_NAME_LOOP)
 
-                AppLogger.d(TAG, "定时备份(循环OneTime)已提交，间隔: $intervalMinutes 分钟, 文件夹数量: ${config.backupFolders.size}")
-            } else {
-                // interval >= 15：使用系统支持的 PeriodicWork
-                val safeInterval = if (intervalMinutes <= 0) 15L else intervalMinutes
-                val workRequest = PeriodicWorkRequestBuilder<PhotoBackupWorker>(
-                    safeInterval,
-                    TimeUnit.MINUTES
-                )
-                    .setConstraints(constraints)
-                    .setInputData(inputData)
-                    .addTag(WORK_NAME_PERIODIC)
-                    .build()
-
-                workManager.enqueueUniquePeriodicWork(
-                    WORK_NAME_PERIODIC,
-                    ExistingPeriodicWorkPolicy.UPDATE,
-                    workRequest
-                )
-                // 同时取消可能存在的循环任务，避免重复执行
-                workManager.cancelUniqueWork(WORK_NAME_LOOP)
-
-                AppLogger.d(TAG, "定时备份(PeriodicWork)已成功提交，间隔: $safeInterval 分钟, 文件夹数量: ${config.backupFolders.size}")
-            }
+            AppLogger.d(TAG, "定时备份(PeriodicWork)已成功提交，间隔: $intervalMinutes 分钟, 文件夹数量: ${config.backupFolders.size}")
         } catch (e: Exception) {
             AppLogger.e(TAG, "启动定时备份失败", e)
             throw e
