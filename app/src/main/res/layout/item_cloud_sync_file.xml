@@ -48,6 +48,16 @@
                 android:textColor="@android:color/darker_gray"
                 android:layout_marginTop="2dp"
                 tools:text="1.2 MB" />
+            <TextView
+                android:id="@+id/tv_already_synced"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/already_synced_with_local"
+                android:textSize="11sp"
+                android:textColor="@android:color/darker_gray"
+                android:layout_marginTop="2dp"
+                android:visibility="gone"
+                tools:visibility="visible" />
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

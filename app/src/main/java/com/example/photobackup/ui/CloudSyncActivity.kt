@@ -12,8 +12,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.photobackup.api.UploadApi
+import com.example.photobackup.data.CategoryRepository
 import com.example.photobackup.data.PhotoBackupDatabase
 import com.example.photobackup.databinding.ActivityCloudSyncBinding
+import com.example.photobackup.ui.SettingsFragment
+import com.example.photobackup.util.FileHashUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -29,6 +32,7 @@ class CloudSyncActivity : AppCompatActivity() {
     private val selectedMd5s = mutableSetOf<String>()
     private var categoryId: String? = null
     private var cloudList: List<com.example.photobackup.data.BackedUpPhoto> = emptyList()
+    private var alreadySyncedMd5s: Set<String> = emptySet()
 
     private val folderPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -80,7 +84,7 @@ class CloudSyncActivity : AppCompatActivity() {
         categoryId = intent.getStringExtra(EXTRA_CATEGORY_ID)
 
         binding.recyclerCloudFiles.layoutManager = LinearLayoutManager(this)
-        cloudSyncAdapter = CloudSyncAdapter(selectedMd5s) { invalidateOptionsMenu() }
+        cloudSyncAdapter = CloudSyncAdapter(selectedMd5s, alreadySyncedMd5s) { invalidateOptionsMenu() }
         binding.recyclerCloudFiles.adapter = cloudSyncAdapter
 
         binding.btnSyncToLocal.setOnClickListener {
@@ -100,20 +104,22 @@ class CloudSyncActivity : AppCompatActivity() {
     }
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        val allSelected = cloudList.isNotEmpty() && selectedMd5s.size == cloudList.size
+        val syncableCount = cloudList.count { it.md5 !in alreadySyncedMd5s }
+        val allSyncableSelected = syncableCount > 0 && selectedMd5s.size == syncableCount
         menu.findItem(com.example.photobackup.R.id.action_select_all)?.title =
-            getString(if (allSelected) com.example.photobackup.R.string.deselect_all else com.example.photobackup.R.string.select_all)
+            getString(if (allSyncableSelected) com.example.photobackup.R.string.deselect_all else com.example.photobackup.R.string.select_all)
         return super.onPrepareOptionsMenu(menu)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             com.example.photobackup.R.id.action_select_all -> {
-                if (selectedMd5s.size == cloudList.size) {
+                val syncableMd5s = cloudList.map { it.md5 }.filter { it !in alreadySyncedMd5s }.toSet()
+                if (selectedMd5s.size == syncableMd5s.size) {
                     selectedMd5s.clear()
                 } else {
                     selectedMd5s.clear()
-                    selectedMd5s.addAll(cloudList.map { it.md5 })
+                    selectedMd5s.addAll(syncableMd5s)
                 }
                 cloudSyncAdapter.notifyItemRangeChanged(0, cloudSyncAdapter.itemCount)
                 true
@@ -125,9 +131,29 @@ class CloudSyncActivity : AppCompatActivity() {
     private fun loadCloudList() {
         val cid = categoryId ?: return
         lifecycleScope.launch {
+            val prefs = getSharedPreferences(SettingsFragment.PREFS_NAME, MODE_PRIVATE)
+            val backupRoot = prefs.getString(SettingsFragment.PREF_BACKUP_ROOT_DIRECTORY, null).orEmpty().trim()
+            val categoryRepo = CategoryRepository(this@CloudSyncActivity)
+            val categoryName = categoryRepo.getCategory(cid)?.name
+
             cloudList = withContext(Dispatchers.IO) {
                 PhotoBackupDatabase.getDatabase(this@CloudSyncActivity).backedUpPhotoDao().getByCategoryId(cid)
             }
+
+            alreadySyncedMd5s = if (backupRoot.isNotEmpty() && categoryName != null) {
+                withContext(Dispatchers.IO) {
+                    val categoryDir = File(backupRoot, categoryName)
+                    cloudList.filter { photo ->
+                        val localFile = File(categoryDir, photo.fileName)
+                        localFile.exists() && FileHashUtil.calculateMD5(localFile) == photo.md5
+                    }.map { it.md5 }.toSet()
+                }
+            } else {
+                emptySet()
+            }
+            selectedMd5s.removeAll(alreadySyncedMd5s)
+
+            cloudSyncAdapter.updateAlreadySyncedMd5s(alreadySyncedMd5s)
             cloudSyncAdapter.submitList(cloudList)
             if (cloudList.isEmpty()) {
                 Toast.makeText(this@CloudSyncActivity, getString(com.example.photobackup.R.string.no_cloud_files), Toast.LENGTH_SHORT).show()

@@ -52,7 +52,7 @@ class CategoryDetailActivity : AppCompatActivity() {
         renderFolderChips()
         refreshStats()
 
-        binding.btnEditFolders.setOnClickListener { folderPickerLauncher.launch(null) }
+        binding.btnAddFolders.setOnClickListener { folderPickerLauncher.launch(null) }
         binding.btnSyncFromCloud.setOnClickListener { showSyncFromCloudDialog() }
         binding.btnBackupNow.setOnClickListener { triggerBackupNow() }
     }

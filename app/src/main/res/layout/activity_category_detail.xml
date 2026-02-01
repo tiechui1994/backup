@@ -22,7 +22,7 @@
             android:layout_marginBottom="16dp"
             tools:text="照片" />
 
-        <!-- 需要备份的文件夹（可点击编辑） -->
+        <!-- 需要备份的文件夹（点击添加） -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -33,7 +33,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/backup_folders_edit_hint"
+            android:text="@string/backup_folders_add_hint"
             android:textSize="12sp"
             android:textColor="@android:color/darker_gray"
             android:layout_marginBottom="8dp" />
@@ -47,11 +47,11 @@
             app:singleSelection="false" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_edit_folders"
+            android:id="@+id/btn_add_folders"
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/edit_folders"
+            android:text="@string/add_folders"
             android:layout_marginBottom="20dp" />
 
         <!-- 已备份数量、本地文件数量 -->
