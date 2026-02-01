@@ -15,7 +15,8 @@ data class BackedUpPhoto(
     val fileName: String,
     val fileSize: Long,
     val backupTime: Long = System.currentTimeMillis(),
-    val uploadUrl: String? = null
+    val uploadUrl: String? = null,
+    val categoryId: String? = null
 )
 
 

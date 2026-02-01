@@ -28,11 +28,12 @@ class PhotoBackupWorker(
     
     companion object {
         private const val TAG = "PhotoBackupWorker"
-        const val KEY_BACKUP_FOLDERS = "backup_folders" // 修改为支持多文件夹
+        const val KEY_BACKUP_FOLDERS = "backup_folders"
         const val KEY_BACKUP_DESTINATION = "backup_destination"
         const val KEY_INTERVAL_MINUTES = "interval_minutes"
         const val KEY_REQUIRES_NETWORK = "requires_network"
         const val KEY_REQUIRES_CHARGING = "requires_charging"
+        const val KEY_CATEGORY_ID = "category_id"
     }
     
     private val database = PhotoBackupDatabase.getDatabase(applicationContext)
@@ -48,6 +49,7 @@ class PhotoBackupWorker(
             
             val backupFolders = foldersString.split(",").filter { it.isNotEmpty() }
             val backupDestination = inputData.getString(KEY_BACKUP_DESTINATION) ?: ""
+            val categoryId = inputData.getString(KEY_CATEGORY_ID)
             
             // 初始化日志落地
             if (backupDestination.isNotEmpty()) {
@@ -99,13 +101,13 @@ class PhotoBackupWorker(
                     val backupSuccess = backupPhoto(file, backupDestination)
                     
                     if (backupSuccess) {
-                        // 记录已备份
                         val backedUpPhoto = BackedUpPhoto(
                             md5 = md5,
                             filePath = file.absolutePath,
                             fileName = file.name,
                             fileSize = file.length(),
-                            uploadUrl = backupDestination
+                            uploadUrl = backupDestination,
+                            categoryId = categoryId
                         )
                         dao.insert(backedUpPhoto)
                         successCount++
@@ -137,8 +139,7 @@ class PhotoBackupWorker(
             )
             
             AppLogger.d(TAG, "备份工作执行完毕 - 最终统计: 成功=$successCount, 跳过=$skipCount, 失败=$failCount")
-            
-            // 延迟后停止前台服务
+            saveLastRunStatus(true, successCount, skipCount, failCount)
             kotlinx.coroutines.delay(3000)
             PhotoBackupForegroundService.stopService(applicationContext)
             
@@ -152,6 +153,7 @@ class PhotoBackupWorker(
             
         } catch (e: Exception) {
             AppLogger.e(TAG, "备份任务严重错误导致中断", e)
+            saveLastRunStatus(false, 0, 0, 0, e.message)
             PhotoBackupForegroundService.stopService(applicationContext)
             
             if (isRetryableError(e)) {
@@ -216,6 +218,20 @@ class PhotoBackupWorker(
                message.contains("retry")
     }
     
+    private fun saveLastRunStatus(success: Boolean, successCount: Int, skipCount: Int, failCount: Int, error: String? = null) {
+        try {
+            applicationContext.getSharedPreferences("photo_backup_prefs", android.content.Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("last_run_success", success)
+                .putLong("last_run_time", System.currentTimeMillis())
+                .putInt("last_success_count", successCount)
+                .putInt("last_skip_count", skipCount)
+                .putInt("last_fail_count", failCount)
+                .putString("last_run_error", error)
+                .apply()
+        } catch (_: Exception) {}
+    }
+
     /**
      * 更新通知
      */

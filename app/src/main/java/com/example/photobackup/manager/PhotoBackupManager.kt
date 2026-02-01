@@ -133,8 +133,9 @@ class PhotoBackupManager private constructor(private val context: Context) {
     
     /**
      * 立即执行一次备份任务（用于测试）
+     * @param categoryId 可选，从类别详情页触发时传入，用于统计已备份数量
      */
-    fun triggerBackupNow(config: BackupConfig) {
+    fun triggerBackupNow(config: BackupConfig, categoryId: String? = null) {
         try {
             AppLogger.d(TAG, "手动触发立即备份任务: foldersCount=${config.backupFolders.size}")
             
@@ -157,11 +158,12 @@ class PhotoBackupManager private constructor(private val context: Context) {
                 .build()
             
             val foldersString = config.backupFolders.joinToString(",")
-            val inputData = workDataOf(
+            val pairs = mutableListOf<Pair<String, Any>>(
                 PhotoBackupWorker.KEY_BACKUP_FOLDERS to foldersString,
                 PhotoBackupWorker.KEY_BACKUP_DESTINATION to config.backupDestination
             )
-            
+            if (categoryId != null) pairs.add(PhotoBackupWorker.KEY_CATEGORY_ID to categoryId)
+            val inputData = workDataOf(*pairs.toTypedArray())
             val workRequest = androidx.work.OneTimeWorkRequestBuilder<PhotoBackupWorker>()
                 .setConstraints(constraints)
                 .setInputData(inputData)

@@ -10,7 +10,7 @@ import androidx.room.RoomDatabase
  */
 @Database(
     entities = [BackedUpPhoto::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class PhotoBackupDatabase : RoomDatabase() {
@@ -27,7 +27,8 @@ abstract class PhotoBackupDatabase : RoomDatabase() {
                     context.applicationContext,
                     PhotoBackupDatabase::class.java,
                     "photo_backup_database"
-                ).build()
+                ).fallbackToDestructiveMigration()
+                .build()
                 INSTANCE = instance
                 instance
             }

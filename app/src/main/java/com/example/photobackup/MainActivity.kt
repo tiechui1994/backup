@@ -1,348 +1,134 @@
 package com.example.photobackup
 
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.google.android.material.chip.Chip
+import androidx.fragment.app.Fragment
 import com.example.photobackup.databinding.ActivityMainBinding
-import com.example.photobackup.manager.PhotoBackupManager
 import com.example.photobackup.sync.SyncHelper
+import com.example.photobackup.ui.HomeFragment
+import com.example.photobackup.ui.SettingsFragment
 import com.example.photobackup.util.AppLogger
 import com.example.photobackup.util.AutostartHelper
 import com.example.photobackup.util.PermissionHelper
 
 class MainActivity : AppCompatActivity() {
-    
-    private lateinit var binding: ActivityMainBinding
-    private val backupManager: PhotoBackupManager by lazy {
-        PhotoBackupManager.getInstance(this)
-    }
 
+    private lateinit var binding: ActivityMainBinding
     private val prefs by lazy {
         getSharedPreferences("photo_backup_prefs", Context.MODE_PRIVATE)
     }
 
-    private val selectedBackupFolders = mutableListOf<String>()
-
-    private enum class PendingAction {
-        NONE,
-        CONFIGURE_SYNC,
-        START_PERIODIC_BACKUP,
-        TRIGGER_TEST_BACKUP
-    }
-
+    private enum class PendingAction { NONE, CONFIGURE_SYNC }
     private var pendingAction: PendingAction = PendingAction.NONE
 
-    private companion object {
-        private const val PREF_BACKUP_FOLDERS = "backup_folders"
-        private const val PREF_BACKUP_DESTINATION = "backup_destination"
-        private const val PREF_INTERVAL_MINUTES = "interval_minutes"
-        private const val PREF_REQUIRES_NETWORK = "requires_network"
-        private const val PREF_REQUIRES_CHARGING = "requires_charging"
-        private const val PREF_SYNC_INTERVAL_MINUTES = "sync_interval_minutes"
-    }
-    
-    // 权限请求启动器
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         try {
-            val allGranted = permissions.all { it.value }
-            if (allGranted) {
+            if (permissions.all { it.value }) {
                 Toast.makeText(this, "权限已授予", Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "需要权限才能备份照片", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "需要权限才能备份", Toast.LENGTH_LONG).show()
             }
-            // 双重检查：权限回调后再跑一次前置校验，满足则继续挂起动作
             handlePendingAction()
         } catch (e: Exception) {
             AppLogger.e("MainActivity", "Error in permission callback", e)
         }
     }
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
             AppLogger.d("MainActivity", "应用启动: onCreate")
-            
             binding = ActivityMainBinding.inflate(layoutInflater)
             setContentView(binding.root)
 
-            restoreUiState()
-            setupFolderUi()
-            setupViews()
+            supportActionBar?.title = getString(R.string.app_name)
+            setupBottomNav()
+            if (savedInstanceState == null) {
+                supportFragmentManager.beginTransaction()
+                    .replace(R.id.container_main, HomeFragment())
+                    .commit()
+            }
 
-            // 双重检查：确保存储权限 + 后台保活引导已完成后，再配置账号定时同步
             pendingAction = PendingAction.CONFIGURE_SYNC
             handlePendingAction()
-            
-            // 检查自启动和关联启动权限
             checkAutostartAndBattery()
-            
             AppLogger.d("MainActivity", "界面初始化完成")
         } catch (e: Exception) {
             AppLogger.e("MainActivity", "onCreate 发生严重错误", e)
             e.printStackTrace()
-            try {
-                Toast.makeText(this, "应用初始化失败: ${e.message}", Toast.LENGTH_LONG).show()
-            } catch (toastException: Exception) {
-                AppLogger.e("MainActivity", "无法显示错误提示 Toast", toastException)
-            }
+            Toast.makeText(this, "应用初始化失败: ${e.message}", Toast.LENGTH_LONG).show()
             finish()
+        }
+    }
+
+    private fun setupBottomNav() {
+        binding.bottomNav.setOnItemSelectedListener { item ->
+            val fragment: Fragment = when (item.itemId) {
+                R.id.nav_home -> HomeFragment()
+                R.id.nav_settings -> SettingsFragment()
+                else -> return@setOnItemSelectedListener false
+            }
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.container_main, fragment)
+                .commit()
+            true
         }
     }
 
     override fun onResume() {
         super.onResume()
-        // 双重检查：从设置页返回后再校验一次，满足则继续挂起动作
         handlePendingAction()
     }
-    
+
     private fun checkAutostartAndBattery() {
         if (!AutostartHelper.isIgnoringBatteryOptimizations(this)) {
-            AppLogger.d("MainActivity", "显示自启动引导弹窗")
-            androidx.appcompat.app.AlertDialog.Builder(this)
+            AlertDialog.Builder(this)
                 .setTitle("需要后台保活权限")
                 .setMessage("为了保证备份任务在后台正常运行，请允许应用“忽略电池优化”并开启“自启动/关联启动”权限。")
                 .setPositiveButton("前往设置") { _, _ ->
-                    AppLogger.d("MainActivity", "用户点击前往设置")
                     AutostartHelper.requestIgnoreBatteryOptimizations(this)
                     AutostartHelper.openAutoStartSettings(this)
                 }
-                .setNegativeButton("稍后再说") { _, _ ->
-                    AppLogger.d("MainActivity", "用户点击稍后再说")
-                }
+                .setNegativeButton("稍后再说") { _, _ -> }
                 .show()
         }
     }
 
-    private fun setupViews() {
-        try {
-            binding.btnStartBackup.setOnClickListener {
-                AppLogger.d("MainActivity", "点击 [启动定时备份] 按钮")
-                pendingAction = PendingAction.START_PERIODIC_BACKUP
-                handlePendingAction()
-            }
-            
-            binding.btnStopBackup.setOnClickListener {
-                AppLogger.d("MainActivity", "点击 [停止备份任务] 按钮")
-                try {
-                    backupManager.cancelPeriodicBackup()
-                    Toast.makeText(this, "已停止备份任务", Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    AppLogger.e("MainActivity", "停止备份任务失败", e)
-                    Toast.makeText(this, "停止备份失败", Toast.LENGTH_SHORT).show()
-                }
-            }
-            
-            binding.btnTestBackup.setOnClickListener {
-                AppLogger.d("MainActivity", "点击 [测试立即备份] 按钮")
-                pendingAction = PendingAction.TRIGGER_TEST_BACKUP
-                handlePendingAction()
-            }
-            
-            AppLogger.d("MainActivity", "按钮事件绑定完成")
-        } catch (e: Exception) {
-            AppLogger.e("MainActivity", "setupViews 失败", e)
-        }
-    }
-
-    private fun restoreUiState() {
-        try {
-            val savedFolders = prefs.getString(PREF_BACKUP_FOLDERS, "") ?: ""
-            val folders = parseFolders(savedFolders)
-            setSelectedBackupFolders(folders)
-
-            binding.etBackupDestination.setText(prefs.getString(PREF_BACKUP_DESTINATION, binding.etBackupDestination.text?.toString() ?: "") ?: "")
-            val intervalMinutesRaw = prefs.getLong(PREF_INTERVAL_MINUTES, 1440L)
-            val intervalMinutes = intervalMinutesRaw.coerceAtLeast(15L)
-            if (intervalMinutes != intervalMinutesRaw) {
-                prefs.edit().putLong(PREF_INTERVAL_MINUTES, intervalMinutes).apply()
-            }
-            binding.etIntervalMinutes.setText(intervalMinutes.toString())
-
-            binding.cbRequiresNetwork.isChecked = prefs.getBoolean(PREF_REQUIRES_NETWORK, false)
-            binding.cbRequiresCharging.isChecked = prefs.getBoolean(PREF_REQUIRES_CHARGING, false)
-
-            val syncIntervalMinutesRaw = prefs.getLong(PREF_SYNC_INTERVAL_MINUTES, 60L)
-            val syncIntervalMinutes = syncIntervalMinutesRaw.coerceAtLeast(15L)
-            if (syncIntervalMinutes != syncIntervalMinutesRaw) {
-                prefs.edit().putLong(PREF_SYNC_INTERVAL_MINUTES, syncIntervalMinutes).apply()
-            }
-            binding.etSyncIntervalMinutes.setText(syncIntervalMinutes.toString())
-        } catch (e: Exception) {
-            AppLogger.e("MainActivity", "恢复界面状态失败", e)
-        }
-    }
-
-    private fun saveUiState(
-        backupFolders: List<String>,
-        backupDestination: String,
-        intervalMinutes: Long,
-        requiresNetwork: Boolean,
-        requiresCharging: Boolean,
-        syncIntervalMinutes: Long
-    ) {
-        prefs.edit()
-            .putString(PREF_BACKUP_FOLDERS, backupFolders.joinToString("\n"))
-            .putString(PREF_BACKUP_DESTINATION, backupDestination)
-            .putLong(PREF_INTERVAL_MINUTES, intervalMinutes)
-            .putBoolean(PREF_REQUIRES_NETWORK, requiresNetwork)
-            .putBoolean(PREF_REQUIRES_CHARGING, requiresCharging)
-            .putLong(PREF_SYNC_INTERVAL_MINUTES, syncIntervalMinutes)
-            .apply()
-    }
-
-    private fun setupFolderUi() {
-        binding.btnAddBackupFolder.setOnClickListener {
-            folderPickerLauncher.launch(null)
-        }
-    }
-
-    // 文件夹选择器（系统文件管理器）
-    private val folderPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        try {
-            if (uri == null) return@registerForActivityResult
-
-            // 尝试持久化权限（避免下次失效）
-            try {
-                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-                contentResolver.takePersistableUriPermission(uri, flags)
-            } catch (e: Exception) {
-                AppLogger.w("MainActivity", "takePersistableUriPermission 失败（可忽略）: ${e.message}")
-            }
-
-            val path = resolveTreeUriToPath(uri)
-            if (path.isNullOrBlank()) {
-                Toast.makeText(this, "暂不支持该位置，请选择主存储(内部存储)的文件夹", Toast.LENGTH_LONG).show()
-                AppLogger.w("MainActivity", "无法将 TreeUri 转换为真实路径: $uri")
-                return@registerForActivityResult
-            }
-
-            val next = (selectedBackupFolders + path).distinct()
-            setSelectedBackupFolders(next)
-        } catch (e: Exception) {
-            AppLogger.e("MainActivity", "处理文件夹选择结果失败", e)
-            Toast.makeText(this, "选择文件夹失败: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    /**
-     * 将 SAF TreeUri 尽可能转换为真实文件路径（只支持主存储 primary:xxx）
-     * 例：content://.../tree/primary%3ADCIM%2FCamera -> /storage/emulated/0/DCIM/Camera
-     */
-    private fun resolveTreeUriToPath(uri: Uri): String? {
-        return try {
-            val docId = DocumentsContract.getTreeDocumentId(uri) // e.g. "primary:DCIM/Camera"
-            when {
-                docId.startsWith("primary:") -> {
-                    val rel = docId.removePrefix("primary:").trimStart('/')
-                    if (rel.isEmpty()) "/storage/emulated/0" else "/storage/emulated/0/$rel"
-                }
-                else -> null
-            }
-        } catch (e: Exception) {
-            AppLogger.w("MainActivity", "resolveTreeUriToPath 异常: ${e.message}")
-            null
-        }
-    }
-
-    private fun parseFolders(raw: String): List<String> {
-        return raw
-            .split(Regex("[,，\\n;；]"))
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .distinct()
-    }
-
-    private fun setSelectedBackupFolders(folders: List<String>) {
-        selectedBackupFolders.clear()
-        selectedBackupFolders.addAll(folders)
-        // 同步到输入框，便于用户复制/粘贴、也便于旧逻辑继续工作
-        binding.etBackupFolder.setText(selectedBackupFolders.joinToString("\n"))
-        renderFolderChips()
-    }
-
-    private fun renderFolderChips() {
-        try {
-            binding.chipgroupBackupFolders.removeAllViews()
-            selectedBackupFolders.forEach { folder ->
-                val chip = Chip(this).apply {
-                    text = folder
-                    isCloseIconVisible = true
-                    setOnCloseIconClickListener {
-                        val next = selectedBackupFolders.filterNot { it == folder }
-                        setSelectedBackupFolders(next)
-                    }
-                }
-                binding.chipgroupBackupFolders.addView(chip)
-            }
-        } catch (e: Exception) {
-            AppLogger.e("MainActivity", "渲染文件夹 Chip 失败", e)
-        }
-    }
-
-    /**
-     * 双重检查：确保关键权限/后台保活状态已满足。
-     * - 存储权限（含 Android 11+ 的所有文件访问）
-     * - 忽略电池优化 + 自启动/关联启动引导
-     *
-     * 注意：自启动/关联启动权限各 ROM 无统一可检测 API，这里通过“引导 + 电池优化白名单状态”做强校验。
-     */
     private fun ensurePrerequisites(): Boolean {
-        // 1) 存储/通知/所有文件访问
         if (!checkPermission()) {
             requestPermission()
             return false
         }
-
-        // 2) 后台保活（电池优化白名单可检测）
         if (!AutostartHelper.isIgnoringBatteryOptimizations(this)) {
             AlertDialog.Builder(this)
                 .setTitle("需要后台保活权限")
-                .setMessage(
-                    "为保证“账号定时同步/定时备份”稳定执行，请完成以下设置：\n" +
-                        "1) 允许应用忽略电池优化\n" +
-                        "2) 开启自启动/关联启动（不同手机入口不同）\n\n" +
-                        "完成后返回应用将自动继续配置。"
-                )
+                .setMessage("为保证定时同步/备份稳定执行，请完成：1) 忽略电池优化 2) 开启自启动。")
                 .setPositiveButton("前往设置") { _, _ ->
                     AutostartHelper.requestIgnoreBatteryOptimizations(this)
                     AutostartHelper.openAutoStartSettings(this)
                 }
-                .setNegativeButton("取消") { _, _ ->
-                    pendingAction = PendingAction.NONE
-                }
+                .setNegativeButton("取消") { _, _ -> pendingAction = PendingAction.NONE }
                 .show()
             return false
         }
-
         return true
     }
 
     private fun handlePendingAction() {
         if (pendingAction == PendingAction.NONE) return
         if (!ensurePrerequisites()) return
-
         when (pendingAction) {
             PendingAction.CONFIGURE_SYNC -> {
-                val syncInterval = prefs.getLong(PREF_SYNC_INTERVAL_MINUTES, 60L).coerceAtLeast(15L)
+                val syncInterval = prefs.getLong("sync_interval_minutes", 60L).coerceAtLeast(15L)
                 SyncHelper.setupSync(this, syncInterval)
-            }
-            PendingAction.START_PERIODIC_BACKUP -> {
-                setupBackupIfReady()
-            }
-            PendingAction.TRIGGER_TEST_BACKUP -> {
-                triggerTestBackup()
             }
             PendingAction.NONE -> Unit
         }
@@ -350,162 +136,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkPermission(): Boolean {
-        val hasMediaPermission = PermissionHelper.hasReadMediaImagesPermission(this)
-        val hasNotificationPermission = PermissionHelper.hasNotificationPermission(this)
-        val hasAllFilesPermission = PermissionHelper.hasAllFilesAccessPermission()
-        
-        AppLogger.d("MainActivity", "权限检查结果: 媒体=$hasMediaPermission, 通知=$hasNotificationPermission, 所有文件访问=$hasAllFilesPermission")
-        return hasMediaPermission && hasNotificationPermission && hasAllFilesPermission
+        return PermissionHelper.hasReadMediaImagesPermission(this) &&
+            PermissionHelper.hasNotificationPermission(this) &&
+            PermissionHelper.hasAllFilesAccessPermission()
     }
-    
+
     private fun requestPermission() {
-        try {
-            AppLogger.d("MainActivity", "正在请求必要的运行时权限")
-            // 1. 先请求常规运行时权限 (媒体访问、通知)
-            val permissions = PermissionHelper.getRequiredPermissions()
-            val missingPermissions = permissions.filter {
-                ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-            }
-
-            if (missingPermissions.isNotEmpty()) {
-                AppLogger.d("MainActivity", "缺失运行时权限: ${missingPermissions.joinToString(",")}")
-                permissionLauncher.launch(missingPermissions.toTypedArray())
-            } 
-            
-            // 2. 如果是 Android 11+，且没有全文件访问权限，引导去设置页
-            if (!PermissionHelper.hasAllFilesAccessPermission()) {
-                AppLogger.d("MainActivity", "缺失所有文件访问权限，引导去设置页面")
-                Toast.makeText(this, "由于 Android 系统限制，请授予所有文件访问权限以进行备份", Toast.LENGTH_LONG).show()
-                PermissionHelper.requestAllFilesAccessPermission(this)
-            }
-        } catch (e: Exception) {
-            AppLogger.e("MainActivity", "请求权限流程发生异常", e)
-            Toast.makeText(this, "请求权限失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        val permissions = PermissionHelper.getRequiredPermissions()
+        val missing = permissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
-    }
-    
-    private fun setupBackupIfReady() {
-        try {
-            if (!::binding.isInitialized) {
-                AppLogger.e("MainActivity", "binding 未初始化，无法继续设置备份")
-                Toast.makeText(this, "界面未初始化", Toast.LENGTH_SHORT).show()
-                return
-            }
-            
-            val backupFoldersStr = binding.etBackupFolder.text.toString().trim()
-            val backupDestination = binding.etBackupDestination.text.toString().trim()
-            
-            if (backupFoldersStr.isEmpty()) {
-                Toast.makeText(this, "请输入要备份的照片文件夹路径", Toast.LENGTH_SHORT).show()
-                return
-            }
-            
-            if (backupDestination.isEmpty()) {
-                Toast.makeText(this, "请输入备份目标目录路径", Toast.LENGTH_SHORT).show()
-                return
-            }
-            
-            // 初始化日志
-            AppLogger.init(backupDestination)
-            
-            // 解析多文件夹路径
-            val backupFolders = parseFolders(backupFoldersStr)
-            if (backupFolders.isEmpty()) {
-                AppLogger.w("MainActivity", "解析后的文件夹列表为空")
-                Toast.makeText(this, "请输入有效的文件夹路径", Toast.LENGTH_SHORT).show()
-                return
-            }
-
-            // 规范化并回显到 chips / 输入框
-            setSelectedBackupFolders(backupFolders)
-            
-            AppLogger.d("MainActivity", "解析备份文件夹成功: $backupFolders, 目标: $backupDestination")
-            
-            // 注意：界面输入的是“分钟”
-            val intervalMinutes = (binding.etIntervalMinutes.text.toString().toLongOrNull() ?: 1440L)
-                .coerceAtLeast(15L)
-
-            // 账号同步间隔（分钟）；留空则跟随备份间隔
-            val syncIntervalText = binding.etSyncIntervalMinutes.text?.toString()?.trim().orEmpty()
-            val syncIntervalMinutes = (syncIntervalText.toLongOrNull() ?: intervalMinutes).coerceAtLeast(15L)
-            
-            val config = PhotoBackupManager.BackupConfig(
-                backupFolders = backupFolders,
-                backupDestination = backupDestination,
-                intervalMinutes = intervalMinutes,
-                requiresNetwork = binding.cbRequiresNetwork.isChecked,
-                requiresCharging = binding.cbRequiresCharging.isChecked
-            )
-            
-            backupManager.setupPeriodicBackup(config)
-            
-            // 同步账号的间隔可单独设置
-            SyncHelper.setupSync(this, syncIntervalMinutes)
-
-            saveUiState(
-                backupFolders = backupFolders,
-                backupDestination = backupDestination,
-                intervalMinutes = intervalMinutes,
-                requiresNetwork = binding.cbRequiresNetwork.isChecked,
-                requiresCharging = binding.cbRequiresCharging.isChecked,
-                syncIntervalMinutes = syncIntervalMinutes
-            )
-            
-            Toast.makeText(this, "定时备份任务已启动", Toast.LENGTH_SHORT).show()
-            AppLogger.d("MainActivity", "定时备份任务与账号同步已配置完毕")
-        } catch (e: Exception) {
-            AppLogger.e("MainActivity", "设置备份任务失败", e)
-            Toast.makeText(this, "启动备份失败: ${e.message}", Toast.LENGTH_LONG).show()
+        if (missing.isNotEmpty()) {
+            permissionLauncher.launch(missing.toTypedArray())
         }
-    }
-    
-    private fun triggerTestBackup() {
-        try {
-            if (!::binding.isInitialized) {
-                AppLogger.e("MainActivity", "binding 未初始化，无法触发测试备份")
-                Toast.makeText(this, "界面未初始化", Toast.LENGTH_SHORT).show()
-                return
-            }
-            
-            val backupFoldersStr = binding.etBackupFolder.text.toString().trim()
-            val backupDestination = binding.etBackupDestination.text.toString().trim()
-            
-            if (backupFoldersStr.isEmpty()) {
-                Toast.makeText(this, "请输入要备份的照片文件夹路径", Toast.LENGTH_SHORT).show()
-                return
-            }
-            
-            if (backupDestination.isEmpty()) {
-                Toast.makeText(this, "请输入备份目标目录路径", Toast.LENGTH_SHORT).show()
-                return
-            }
-            
-            // 初始化日志
-            AppLogger.init(backupDestination)
-            
-            val backupFolders = parseFolders(backupFoldersStr)
-            if (backupFolders.isEmpty()) {
-                Toast.makeText(this, "请输入有效的文件夹路径", Toast.LENGTH_SHORT).show()
-                return
-            }
-            setSelectedBackupFolders(backupFolders)
-            
-            val config = PhotoBackupManager.BackupConfig(
-                backupFolders = backupFolders,
-                backupDestination = backupDestination,
-                intervalMinutes = 15, // 测试备份间隔设为 15 分钟（仅作为 config 占位，OneTimeWork 会立即执行）
-                requiresNetwork = binding.cbRequiresNetwork.isChecked,
-                requiresCharging = false
-            )
-            
-            backupManager.triggerBackupNow(config)
-            Toast.makeText(this, "已触发单次备份任务", Toast.LENGTH_SHORT).show()
-            AppLogger.d("MainActivity", "单次测试备份任务已触发")
-        } catch (e: Exception) {
-            AppLogger.e("MainActivity", "触发单次备份失败", e)
-            Toast.makeText(this, "触发备份失败: ${e.message}", Toast.LENGTH_LONG).show()
+        if (!PermissionHelper.hasAllFilesAccessPermission()) {
+            Toast.makeText(this, "请授予所有文件访问权限以进行备份", Toast.LENGTH_LONG).show()
+            PermissionHelper.requestAllFilesAccessPermission(this)
         }
     }
 }
-
-

@@ -46,6 +46,12 @@ interface BackedUpPhotoDao {
      */
     @Query("SELECT COUNT(*) FROM backed_up_photos")
     suspend fun getBackupCount(): Int
+
+    /**
+     * 按类别统计已备份数量
+     */
+    @Query("SELECT COUNT(*) FROM backed_up_photos WHERE categoryId = :categoryId")
+    suspend fun getBackupCountByCategory(categoryId: String): Int
 }
 
 
