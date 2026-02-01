@@ -48,7 +48,7 @@ object PermissionHelper {
     }
 
     /**
-     * 检查是否有所有文件访问权限 (Android 11+)
+     * 检查是否有所有文件访问权限 (Android 11+)，用于写入 /storage/emulated/0/PhotoBackup 等路径
      */
     fun hasAllFilesAccessPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -57,9 +57,24 @@ object PermissionHelper {
             true
         }
     }
+
+    /**
+     * 检查是否有写入外部存储权限 (Android 9 及以下)
+     */
+    fun hasWriteExternalStoragePermission(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            true
+        } else {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+    }
     
     /**
      * 获取需要申请的运行时权限数组
+     * 包含写入外部存储（备份目录、云端模式日志 /storage/emulated/0/PhotoBackup/logs）
      */
     fun getRequiredPermissions(): Array<String> {
         val permissions = mutableListOf<String>()
@@ -69,6 +84,9 @@ object PermissionHelper {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         } else {
             permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
         }
         
         return permissions.toTypedArray()

@@ -7,6 +7,8 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
 /**
@@ -26,6 +28,11 @@ object CloudBackupApi {
         return baseUrl.trim().removeSuffix("/")
     }
 
+    /** OkHttp 要求 header 值为 ASCII，对含中文等字符进行 UTF-8 URL 编码 */
+    private fun encodeHeaderValue(value: String): String {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8.name())
+    }
+
     /**
      * 上传文件到云端
      * @return 成功时返回 fileId（sha1），失败返回 null
@@ -42,7 +49,7 @@ object CloudBackupApi {
                 .url(url)
                 .put(body)
                 .addHeader("userid", userid)
-                .addHeader("category", category)
+                .addHeader("category", encodeHeaderValue(category))
                 .addHeader("sha1sum", sha1sum)
                 .build()
             val response = client.newCall(request).execute()
@@ -77,8 +84,8 @@ object CloudBackupApi {
                 .url(url)
                 .get()
                 .addHeader("userid", userid)
-                .addHeader("category", category)
-                .addHeader("filename", filename)
+                .addHeader("category", encodeHeaderValue(category))
+                .addHeader("filename", encodeHeaderValue(filename))
                 .build()
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {

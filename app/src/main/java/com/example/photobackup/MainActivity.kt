@@ -2,6 +2,7 @@ package com.example.photobackup
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -138,6 +139,7 @@ class MainActivity : AppCompatActivity() {
     private fun checkPermission(): Boolean {
         return PermissionHelper.hasReadMediaImagesPermission(this) &&
             PermissionHelper.hasNotificationPermission(this) &&
+            PermissionHelper.hasWriteExternalStoragePermission(this) &&
             PermissionHelper.hasAllFilesAccessPermission()
     }
 
@@ -149,8 +151,8 @@ class MainActivity : AppCompatActivity() {
         if (missing.isNotEmpty()) {
             permissionLauncher.launch(missing.toTypedArray())
         }
-        if (!PermissionHelper.hasAllFilesAccessPermission()) {
-            Toast.makeText(this, "请授予所有文件访问权限以进行备份", Toast.LENGTH_LONG).show()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !PermissionHelper.hasAllFilesAccessPermission()) {
+            Toast.makeText(this, "请授予「所有文件访问权限」以备份到自定义目录及写入云端日志 (PhotoBackup/logs)", Toast.LENGTH_LONG).show()
             PermissionHelper.requestAllFilesAccessPermission(this)
         }
     }

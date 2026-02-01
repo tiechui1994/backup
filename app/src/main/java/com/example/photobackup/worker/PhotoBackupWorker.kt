@@ -59,9 +59,9 @@ class PhotoBackupWorker(
             val isCloudMode = SyncBackendProvider.isCloudTarget(firstDestination)
             AppLogger.d(TAG, "备份目标: firstDestination=[$firstDestination], isCloudMode=$isCloudMode, categoryName=$categoryName")
 
-            // 初始化日志落地：根目录/logs 或应用目录（云端模式）
+            // 初始化日志落地：云端模式固定为 /storage/emulated/0/PhotoBackup/logs，本地模式为 备份根目录/logs
             if (isCloudMode) {
-                applicationContext.getExternalFilesDir(null)?.absolutePath?.let { AppLogger.init(it) }
+                AppLogger.init("/storage/emulated/0/PhotoBackup")
             } else {
                 backupDestinations.firstOrNull()?.let { File(it).parent }?.let { AppLogger.init(it) }
             }
