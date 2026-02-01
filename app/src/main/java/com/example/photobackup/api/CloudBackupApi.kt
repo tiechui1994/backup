@@ -5,13 +5,14 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * 云端备份 API：PUT 上传、GET 下载
- * PUT /api/file/upload  Header: userid, category, sha1sum  Body: 文件内容
- * GET /api/file/download  Header: userid, category, filename  响应: 文件内容
+ * 云端备份 API
+ * PUT /api/file/upload  Header: userid, category, sha1sum  Body: 文件内容  响应: { "fileId": "xxx" }
+ * GET /api/file/download?fileId=xxx  Header: userid, category, filename  响应: 文件内容
  */
 object CloudBackupApi {
     private const val TAG = "CloudBackupApi"
@@ -27,12 +28,12 @@ object CloudBackupApi {
 
     /**
      * 上传文件到云端
-     * @return 是否成功
+     * @return 成功时返回 fileId（sha1），失败返回 null
      */
-    fun upload(baseUrl: String, userid: String, category: String, file: File, sha1sum: String): Boolean {
+    fun upload(baseUrl: String, userid: String, category: String, file: File, sha1sum: String): String? {
         if (baseUrl.isBlank() || userid.isBlank()) {
             AppLogger.e(TAG, "baseUrl 或 userid 为空")
-            return false
+            return null
         }
         return try {
             val url = "${normalizeBaseUrl(baseUrl)}/api/file/upload"
@@ -45,30 +46,33 @@ object CloudBackupApi {
                 .addHeader("sha1sum", sha1sum)
                 .build()
             val response = client.newCall(request).execute()
-            val ok = response.isSuccessful
-            if (!ok) {
+            if (!response.isSuccessful) {
                 AppLogger.e(TAG, "上传失败: ${file.name} code=${response.code} body=${response.body?.string()}")
-            } else {
-                AppLogger.d(TAG, "上传成功: ${file.name}")
+                return null
             }
-            ok
+            val bodyStr = response.body?.string().orEmpty()
+            val fileId = JSONObject(bodyStr).optString("fileId", "").ifBlank { sha1sum }
+            AppLogger.d(TAG, "上传成功: ${file.name} fileId=$fileId")
+            fileId
         } catch (e: Exception) {
             AppLogger.e(TAG, "上传异常: ${file.absolutePath}", e)
-            false
+            null
         }
     }
 
     /**
      * 从云端下载文件
+     * @param fileId 上传接口返回的 fileId（sha1）
+     * @param filename 用于 Content-Disposition 的文件名
      * @return 文件内容，失败返回 null
      */
-    fun download(baseUrl: String, userid: String, category: String, filename: String): ByteArray? {
+    fun download(baseUrl: String, userid: String, category: String, fileId: String, filename: String): ByteArray? {
         if (baseUrl.isBlank() || userid.isBlank()) {
             AppLogger.e(TAG, "baseUrl 或 userid 为空")
             return null
         }
         return try {
-            val url = "${normalizeBaseUrl(baseUrl)}/api/file/download"
+            val url = "${normalizeBaseUrl(baseUrl)}/api/file/download?fileId=${java.net.URLEncoder.encode(fileId, "UTF-8")}"
             val request = Request.Builder()
                 .url(url)
                 .get()
@@ -78,12 +82,12 @@ object CloudBackupApi {
                 .build()
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
-                AppLogger.e(TAG, "下载失败: $filename code=${response.code}")
+                AppLogger.e(TAG, "下载失败: fileId=$fileId code=${response.code}")
                 return null
             }
             response.body?.bytes()
         } catch (e: Exception) {
-            AppLogger.e(TAG, "下载异常: $filename", e)
+            AppLogger.e(TAG, "下载异常: fileId=$fileId", e)
             null
         }
     }

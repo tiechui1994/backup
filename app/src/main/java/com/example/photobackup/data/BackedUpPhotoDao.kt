@@ -54,7 +54,7 @@ interface BackedUpPhotoDao {
     suspend fun getBackupCountByCategory(categoryId: String): Int
 
     /**
-     * 按类别获取云端备份文件列表（用于同步到本地时勾选）
+     * 按类别获取已备份文件列表（用于同步到本地时勾选）
      */
     @Query("SELECT * FROM backed_up_photos WHERE categoryId = :categoryId ORDER BY backupTime DESC")
     suspend fun getByCategoryId(categoryId: String): List<BackedUpPhoto>

@@ -80,16 +80,6 @@
             android:name=".ui.CloudBackupConfigActivity"
             android:exported="false" />
 
-        <!-- 拨号盘暗号启动广播 (针对 OPPO/Xiaomi 等兼容性补充) -->
-        <receiver
-            android:name=".receiver.SecretCodeReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.provider.Telephony.SECRET_CODE" />
-                <data android:scheme="android_secret_code" android:host="1234" />
-            </intent-filter>
-        </receiver>
-
         <!-- 账号同步: 身份验证服务 -->
         <service
             android:name=".sync.StubAuthenticatorService"

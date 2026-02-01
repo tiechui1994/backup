@@ -6,13 +6,12 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 
 /**
- * 照片备份 API 接口
- * 测试版本：将文件备份到本地自定义目录
+ * 本地文件备份 API：将文件备份到本地指定目录，以及从备份目录同步到本地。
  */
-object UploadApi {
-    
-    private const val TAG = "UploadApi"
-    
+object LocalBackupApi {
+
+    private const val TAG = "LocalBackupApi"
+
     /**
      * 备份照片文件到指定目录
      * @param sourceFile 源文件
@@ -25,10 +24,9 @@ object UploadApi {
                 AppLogger.d(TAG, "未配置备份目标目录，仅记录到本地数据库: ${sourceFile.name}")
                 return true
             }
-            
+
             val destDir = File(backupDestination)
-            
-            // 确保目标目录存在
+
             if (!destDir.exists()) {
                 val created = destDir.mkdirs()
                 if (!created) {
@@ -36,22 +34,19 @@ object UploadApi {
                     return false
                 }
             }
-            
+
             if (!destDir.isDirectory) {
                 AppLogger.e(TAG, "备份目标路径不是目录: $backupDestination")
                 return false
             }
-            
-            // 检查是否有写入权限
+
             if (!destDir.canWrite()) {
                 AppLogger.e(TAG, "备份目录无写入权限: $backupDestination")
                 return false
             }
-            
-            // 创建目标文件路径（保持原文件名，如果已存在则添加时间戳）
+
             val destFile = File(destDir, sourceFile.name)
             val finalDestFile = if (destFile.exists()) {
-                // 如果文件已存在，添加时间戳
                 val nameWithoutExt = sourceFile.nameWithoutExtension
                 val ext = sourceFile.extension
                 val timestamp = System.currentTimeMillis()
@@ -59,17 +54,16 @@ object UploadApi {
             } else {
                 destFile
             }
-            
-            // 复制文件
+
             FileInputStream(sourceFile).use { input ->
                 FileOutputStream(finalDestFile).use { output ->
                     input.copyTo(output)
                 }
             }
-            
+
             AppLogger.d(TAG, "备份成功: ${sourceFile.name} -> ${finalDestFile.absolutePath}")
             true
-            
+
         } catch (e: java.io.FileNotFoundException) {
             AppLogger.e(TAG, "文件未找到: ${sourceFile.absolutePath}", e)
             false
@@ -137,5 +131,3 @@ object UploadApi {
         }
     }
 }
-
-

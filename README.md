@@ -28,7 +28,7 @@ app/src/main/java/com/example/photobackup/
 │   ├── FileHashUtil.kt     # 文件 MD5 计算
 │   └── PermissionHelper.kt # 权限管理
 ├── api/                     # API 层
-│   └── UploadApi.kt        # 文件备份 API（测试版本：本地文件复制）
+│   └── LocalBackupApi.kt   # 本地文件备份 API
 └── MainActivity.kt         # 主界面
 ```
 
@@ -100,7 +100,7 @@ WorkManager 会自动处理以下情况的重试：
 ## 注意事项
 
 1. **最小间隔**：PeriodicWorkRequest 的最小间隔是 15 分钟，即使设置更小的值也会被系统调整为 15 分钟
-2. **备份逻辑**：当前测试版本将文件备份到用户自定义的本地目录，使用 `UploadApi.backupPhoto()` 实现文件复制
+2. **备份逻辑**：当前测试版本将文件备份到用户自定义的本地目录，使用 `LocalBackupApi.backupPhoto()` 实现文件复制
 3. **权限**：确保在 AndroidManifest.xml 中声明了所有必要的权限，并且目标目录有写入权限
 4. **前台服务类型**：Android 14+ 需要指定前台服务类型（dataSync）
 5. **文件冲突**：如果目标目录中已存在同名文件，会自动添加时间戳避免覆盖

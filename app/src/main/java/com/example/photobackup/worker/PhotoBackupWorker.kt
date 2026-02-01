@@ -7,8 +7,8 @@ import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.example.photobackup.api.CloudBackupApi
-import com.example.photobackup.api.UploadApi
+import com.example.photobackup.api.FileSyncBackend
+import com.example.photobackup.api.SyncBackendProvider
 import com.example.photobackup.data.BackedUpPhoto
 import com.example.photobackup.ui.SettingsFragment
 import com.example.photobackup.data.PhotoBackupDatabase
@@ -55,7 +55,8 @@ class PhotoBackupWorker(
             val backupDestinations = destinationsString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
             val categoryId = inputData.getString(KEY_CATEGORY_ID)
             val categoryName = inputData.getString(KEY_CATEGORY_NAME)
-            val isCloudMode = backupDestinations.firstOrNull() == "cloud"
+            val firstDestination = backupDestinations.firstOrNull().orEmpty().trim()
+            val isCloudMode = SyncBackendProvider.isCloudTarget(firstDestination)
 
             // 初始化日志落地：根目录/logs 或应用目录（云端模式）
             if (isCloudMode) {
@@ -86,7 +87,7 @@ class PhotoBackupWorker(
             var successCount = 0
             var skipCount = 0
             var failCount = 0
-            
+
             // 遍历处理每个图片文件
             allImageFiles.forEachIndexed { index, file ->
                 try {
@@ -105,39 +106,40 @@ class PhotoBackupWorker(
                         return@forEachIndexed
                     }
                     
-                    // 备份文件：云端 API 或本地目录
+                    // 通过统一后端上传/备份（本地或云端由 SyncBackendProvider 决定）
                     var backupSuccess = backupDestinations.isEmpty()
+                    var backupTargetForRecord = backupDestinations.firstOrNull() ?: ""
+                    var remoteIdForRecord: String? = null
                     if (!backupSuccess) {
                         if (isCloudMode && categoryName != null) {
-                            val prefs = applicationContext.getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
-                            val baseUrl = prefs.getString(SettingsFragment.PREF_CLOUD_BASE_URL, null).orEmpty().trim()
-                            val userid = prefs.getString(SettingsFragment.PREF_CLOUD_USER_ID, null).orEmpty().trim()
-                            val sha1 = FileHashUtil.calculateSHA1(file)
-                            if (sha1 != null) {
-                                backupSuccess = CloudBackupApi.upload(baseUrl, userid, categoryName, file, sha1)
-                            } else {
-                                backupSuccess = false
-                            }
+                            val backend = SyncBackendProvider.get(applicationContext, "cloud", categoryName)
+                            val result = backend.upload(file, categoryName)
+                            backupSuccess = result.success
+                            remoteIdForRecord = result.remoteId
+                            backupTargetForRecord = "cloud"
                         } else {
                             backupSuccess = true
                             for (dest in backupDestinations) {
-                                if (!backupPhoto(file, dest)) {
+                                val backend = SyncBackendProvider.get(applicationContext, dest.trim(), categoryName)
+                                val result = backend.upload(file, categoryName)
+                                if (!result.success) {
                                     backupSuccess = false
                                     break
                                 }
                             }
+                            backupTargetForRecord = backupDestinations.firstOrNull() ?: ""
                         }
                     }
 
-                    val uploadUrlForRecord = if (isCloudMode) "cloud" else (backupDestinations.firstOrNull() ?: "")
                     if (backupSuccess) {
                         val backedUpPhoto = BackedUpPhoto(
                             md5 = md5,
                             filePath = file.absolutePath,
                             fileName = file.name,
                             fileSize = file.length(),
-                            uploadUrl = uploadUrlForRecord,
-                            categoryId = categoryId
+                            backupTarget = backupTargetForRecord,
+                            categoryId = categoryId,
+                            remoteId = remoteIdForRecord
                         )
                         dao.insert(backedUpPhoto)
                         successCount++
@@ -221,19 +223,6 @@ class PhotoBackupWorker(
         
         traverseDirectory(folder)
         return files
-    }
-    
-    /**
-     * 备份照片到本地目录
-     * 支持文件复制和异常处理
-     */
-    private suspend fun backupPhoto(file: File, backupDestination: String): Boolean {
-        return try {
-            UploadApi.backupPhoto(file, backupDestination)
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "备份文件失败: ${file.absolutePath}", e)
-            false
-        }
     }
     
     /**
