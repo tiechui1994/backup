@@ -147,6 +147,12 @@ class PhotoBackupManager private constructor(private val context: Context) {
                 }
                 .build()
             val interval = intervalMinutes.coerceAtLeast(15L)
+            // 先取消各类别旧任务，再入队新任务，确保同步目标切换后立即生效（UPDATE 可能不立即替换已排期运行）
+            categories.forEach { category ->
+                workManager.cancelUniqueWork("${WORK_NAME_PERIODIC}_${category.id}")
+            }
+            workManager.cancelUniqueWork(WORK_NAME_PERIODIC)
+            workManager.cancelUniqueWork(WORK_NAME_LOOP)
             categories.forEach { category ->
                 val dest = if (useCloudApi) "cloud" else categoryDestination(backupRoot, category)
                 val foldersString = category.backupFolders.joinToString(",")
@@ -176,11 +182,9 @@ class PhotoBackupManager private constructor(private val context: Context) {
                     .addTag(WORK_NAME_PERIODIC)
                     .build()
                 val workName = "${WORK_NAME_PERIODIC}_${category.id}"
-                workManager.enqueueUniquePeriodicWork(workName, ExistingPeriodicWorkPolicy.UPDATE, workRequest)
+                workManager.enqueueUniquePeriodicWork(workName, ExistingPeriodicWorkPolicy.KEEP, workRequest)
             }
-            workManager.cancelUniqueWork(WORK_NAME_PERIODIC)
-            workManager.cancelUniqueWork(WORK_NAME_LOOP)
-            AppLogger.d(TAG, "定时备份已按类别提交，共 ${categories.size} 个类别，间隔: $interval 分钟")
+            AppLogger.d(TAG, "定时备份已按类别提交，共 ${categories.size} 个类别，间隔: $interval 分钟，useCloudApi=$useCloudApi")
         } catch (e: Exception) {
             AppLogger.e(TAG, "启动定时备份失败", e)
             throw e

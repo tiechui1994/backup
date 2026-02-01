@@ -57,6 +57,7 @@ class PhotoBackupWorker(
             val categoryName = inputData.getString(KEY_CATEGORY_NAME)
             val firstDestination = backupDestinations.firstOrNull().orEmpty().trim()
             val isCloudMode = SyncBackendProvider.isCloudTarget(firstDestination)
+            AppLogger.d(TAG, "备份目标: firstDestination=[$firstDestination], isCloudMode=$isCloudMode, categoryName=$categoryName")
 
             // 初始化日志落地：根目录/logs 或应用目录（云端模式）
             if (isCloudMode) {
