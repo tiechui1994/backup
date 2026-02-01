@@ -50,11 +50,9 @@ class CategoryDetailActivity : AppCompatActivity() {
 
         binding.tvCategoryTitle.text = category!!.name
         renderFolderChips()
-        renderDestinationChips()
         refreshStats()
 
         binding.btnEditFolders.setOnClickListener { folderPickerLauncher.launch(null) }
-        binding.btnEditDestinations.setOnClickListener { destinationPickerLauncher.launch(null) }
         binding.btnSyncFromCloud.setOnClickListener { showSyncFromCloudDialog() }
         binding.btnBackupNow.setOnClickListener { triggerBackupNow() }
     }
@@ -76,30 +74,6 @@ class CategoryDetailActivity : AppCompatActivity() {
             }
             binding.chipgroupFolders.addView(chip)
         }
-    }
-
-    private fun renderDestinationChips() {
-        binding.chipgroupDestinations.removeAllViews()
-        category?.effectiveBackupDestinations()?.forEach { path ->
-            val chip = Chip(this).apply {
-                text = path
-                isCloseIconVisible = true
-                setOnCloseIconClickListener {
-                    removeDestination(path)
-                }
-            }
-            binding.chipgroupDestinations.addView(chip)
-        }
-    }
-
-    private fun removeDestination(path: String) {
-        val c = category ?: return
-        val list = c.backupDestinations.filterNot { it == path }
-        val clearLegacy = c.backupDestination == path
-        category = c.copy(backupDestinations = list, backupDestination = if (clearLegacy) "" else c.backupDestination)
-        categoryRepository.updateCategory(category!!)
-        renderDestinationChips()
-        refreshStats()
     }
 
     private fun removeFolder(folder: String) {
@@ -146,29 +120,6 @@ class CategoryDetailActivity : AppCompatActivity() {
         refreshStats()
     }
 
-    private val destinationPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri == null) return@registerForActivityResult
-        try {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-        } catch (_: Exception) {}
-        val path = resolveTreeUriToPath(uri)
-        if (path.isNullOrBlank()) {
-            Toast.makeText(this, "请选择主存储下的文件夹", Toast.LENGTH_LONG).show()
-            return@registerForActivityResult
-        }
-        val dir = File(path)
-        if (!dir.exists() || !dir.isDirectory) {
-            Toast.makeText(this, "所选路径不存在或不是目录，请重新选择", Toast.LENGTH_LONG).show()
-            return@registerForActivityResult
-        }
-        val c = category ?: return@registerForActivityResult
-        val list = (c.backupDestinations + path).distinct()
-        category = c.copy(backupDestinations = list, backupDestination = "")
-        categoryRepository.updateCategory(category!!)
-        renderDestinationChips()
-        refreshStats()
-    }
-
     private fun resolveTreeUriToPath(uri: Uri): String? {
         return try {
             val docId = DocumentsContract.getTreeDocumentId(uri)
@@ -198,15 +149,16 @@ class CategoryDetailActivity : AppCompatActivity() {
             Toast.makeText(this, "请先添加要备份的文件夹", Toast.LENGTH_SHORT).show()
             return
         }
-        val dests = c.effectiveBackupDestinations()
-        if (dests.isEmpty()) {
-            Toast.makeText(this, "请先添加备份目标目录（通过编辑选择真实存在的文件夹）", Toast.LENGTH_SHORT).show()
+        val prefs = getSharedPreferences(SettingsFragment.PREFS_NAME, MODE_PRIVATE)
+        val backupRoot = prefs.getString(SettingsFragment.PREF_BACKUP_ROOT_DIRECTORY, null).orEmpty().trim()
+        if (backupRoot.isEmpty()) {
+            Toast.makeText(this, getString(com.example.photobackup.R.string.please_set_backup_root), Toast.LENGTH_SHORT).show()
             return
         }
-        val prefs = getSharedPreferences("photo_backup_prefs", MODE_PRIVATE)
+        val dest = File(File(backupRoot, "类别"), c.name).absolutePath
         val config = PhotoBackupManager.BackupConfig(
             backupFolders = c.backupFolders,
-            backupDestinations = dests,
+            backupDestinations = listOf(dest),
             intervalMinutes = 15,
             requiresNetwork = prefs.getBoolean("requires_network", false),
             requiresCharging = false

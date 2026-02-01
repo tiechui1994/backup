@@ -21,13 +21,14 @@ jobs:
 
     - name: Set version (auto-increment)
       run: |
-        echo "VERSION_CODE=${GITHUB_RUN_NUMBER}" >> $GITHUB_ENV
+        let "result = ($(date '+%s') - 1769942000)/60"
+        echo "VERSION_CODE=${result}" >> $GITHUB_ENV
         if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
           # tag 构建：versionName 使用 tag 名（例如 v1.2.3）
           echo "VERSION_NAME=${GITHUB_REF_NAME}" >> $GITHUB_ENV
         else
           # 非 tag 构建：给一个可识别的版本名
-          echo "VERSION_NAME=ci-${GITHUB_RUN_NUMBER}" >> $GITHUB_ENV
+          echo "VERSION_NAME=ci-${result}" >> $GITHUB_ENV
         fi
       
     - name: Set up JDK 17

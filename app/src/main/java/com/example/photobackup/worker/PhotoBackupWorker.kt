@@ -50,7 +50,6 @@ class PhotoBackupWorker(
             val backupFolders = foldersString.split(",").filter { it.isNotEmpty() }
             val destinationsString = inputData.getString(KEY_BACKUP_DESTINATION) ?: ""
             val backupDestinations = destinationsString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                .filter { path -> File(path).exists() && File(path).isDirectory }
             val categoryId = inputData.getString(KEY_CATEGORY_ID)
             
             // 初始化日志落地（取第一个有效目标目录）

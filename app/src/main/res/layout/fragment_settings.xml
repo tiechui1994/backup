@@ -20,6 +20,39 @@
             android:textStyle="bold"
             android:layout_marginBottom="16dp" />
 
+        <!-- 备份目标根目录（类别备份到 根目录/类别/类别名） -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/backup_root_directory"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/backup_root_hint"
+            android:textSize="12sp"
+            android:textColor="@android:color/darker_gray"
+            android:layout_marginBottom="8dp" />
+        <TextView
+            android:id="@+id/tv_backup_root"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="@android:color/darker_gray"
+            android:maxLines="2"
+            android:ellipsize="middle"
+            android:layout_marginBottom="8dp"
+            tools:text="/storage/emulated/0/PhotoBackup" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_select_backup_root"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/select_root_directory"
+            android:layout_marginBottom="16dp" />
+
         <!-- 1) 备份时间间隔（分钟） -->
         <TextView
             android:layout_width="match_parent"

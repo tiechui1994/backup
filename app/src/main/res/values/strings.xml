@@ -21,6 +21,11 @@
     <string name="please_select_files">请先勾选要同步的文件</string>
     <string name="sync_success_count">已同步 %d 个文件到本地</string>
     <string name="sync_fail_count">%d 个文件同步失败（可能备份文件已移动）</string>
+    <string name="backup_root_directory">备份目标根目录</string>
+    <string name="backup_root_hint">备份将保存到：根目录/类别/类别名，由系统自动创建</string>
+    <string name="select_root_directory">选择根目录</string>
+    <string name="backup_root_not_set">未设置</string>
+    <string name="please_set_backup_root">请先在设置中选择备份目标根目录</string>
     <string name="backup_interval_minutes">备份时间间隔（分钟）</string>
     <string name="account_sync_interval_minutes">账号同步间隔（分钟）</string>
     <string name="backup_options">备份选项</string>

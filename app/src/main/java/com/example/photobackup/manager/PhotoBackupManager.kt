@@ -7,8 +7,10 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.example.photobackup.data.Category
 import com.example.photobackup.util.AppLogger
 import com.example.photobackup.worker.PhotoBackupWorker
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -111,9 +113,68 @@ class PhotoBackupManager private constructor(private val context: Context) {
             throw e
         }
     }
-    
+
+    /** 备份目标路径：根目录/类别/类别名 */
+    private fun categoryDestination(root: String, category: Category): String {
+        val categoryDir = "类别"
+        return File(root, categoryDir, category.name).absolutePath
+    }
+
     /**
-     * 取消定时备份任务
+     * 按类别设置定时备份：每个类别的备份目标为 根目录/类别/类别名
+     */
+    fun setupPeriodicBackupFromCategories(
+        backupRoot: String,
+        categories: List<Category>,
+        intervalMinutes: Long,
+        requiresNetwork: Boolean = false,
+        requiresCharging: Boolean = false
+    ) {
+        try {
+            val workManager = try {
+                WorkManager.getInstance(context)
+            } catch (e: IllegalStateException) {
+                AppLogger.e(TAG, "WorkManager 未初始化", e)
+                throw IllegalStateException("WorkManager 未初始化，请稍后重试", e)
+            }
+            val constraints = Constraints.Builder()
+                .apply {
+                    if (requiresNetwork) setRequiredNetworkType(NetworkType.CONNECTED)
+                    else setRequiredNetworkType(NetworkType.NOT_REQUIRED)
+                    if (requiresCharging) setRequiresCharging(true)
+                }
+                .build()
+            val interval = intervalMinutes.coerceAtLeast(15L)
+            categories.forEach { category ->
+                val dest = categoryDestination(backupRoot, category)
+                val foldersString = category.backupFolders.joinToString(",")
+                val inputData = workDataOf(
+                    PhotoBackupWorker.KEY_BACKUP_FOLDERS to foldersString,
+                    PhotoBackupWorker.KEY_BACKUP_DESTINATION to dest,
+                    PhotoBackupWorker.KEY_INTERVAL_MINUTES to interval,
+                    PhotoBackupWorker.KEY_REQUIRES_NETWORK to requiresNetwork,
+                    PhotoBackupWorker.KEY_REQUIRES_CHARGING to requiresCharging,
+                    PhotoBackupWorker.KEY_CATEGORY_ID to category.id
+                )
+                val workRequest = PeriodicWorkRequestBuilder<PhotoBackupWorker>(interval, TimeUnit.MINUTES)
+                    .setConstraints(constraints)
+                    .setInputData(inputData)
+                    .addTag(WORK_NAME_PERIODIC)
+                    .build()
+                val workName = "${WORK_NAME_PERIODIC}_${category.id}"
+                workManager.enqueueUniquePeriodicWork(workName, ExistingPeriodicWorkPolicy.UPDATE, workRequest)
+            }
+            workManager.cancelUniqueWork(WORK_NAME_PERIODIC)
+            workManager.cancelUniqueWork(WORK_NAME_LOOP)
+            AppLogger.d(TAG, "定时备份已按类别提交，共 ${categories.size} 个类别，间隔: $interval 分钟")
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "启动定时备份失败", e)
+            throw e
+        }
+    }
+
+    /**
+     * 取消定时备份任务（包括所有按类别提交的任务）
      */
     fun cancelPeriodicBackup() {
         try {
@@ -126,6 +187,10 @@ class PhotoBackupManager private constructor(private val context: Context) {
             }
             workManager.cancelUniqueWork(WORK_NAME_PERIODIC)
             workManager.cancelUniqueWork(WORK_NAME_LOOP)
+            val categories = com.example.photobackup.data.CategoryRepository(context).getCategories()
+            categories.forEach { category ->
+                workManager.cancelUniqueWork("${WORK_NAME_PERIODIC}_${category.id}")
+            }
             AppLogger.d(TAG, "定时备份任务已取消")
         } catch (e: Exception) {
             AppLogger.e(TAG, "取消备份任务时发生异常", e)

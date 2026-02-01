@@ -1,11 +1,15 @@
 package com.example.photobackup.ui
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import com.example.photobackup.data.PhotoBackupDatabase
 import com.example.photobackup.databinding.FragmentSettingsBinding
@@ -18,6 +22,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -40,17 +45,55 @@ class SettingsFragment : Fragment() {
         return binding.root
     }
 
+    private val backupRootPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            requireContext().contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        } catch (_: Exception) {}
+        val path = resolveTreeUriToPath(uri)
+        if (path.isNullOrBlank()) {
+            Toast.makeText(requireContext(), "请选择主存储下的文件夹", Toast.LENGTH_LONG).show()
+            return@registerForActivityResult
+        }
+        val dir = File(path)
+        if (!dir.exists() || !dir.isDirectory) {
+            Toast.makeText(requireContext(), "所选路径不存在或不是目录", Toast.LENGTH_LONG).show()
+            return@registerForActivityResult
+        }
+        prefs.edit().putString(PREF_BACKUP_ROOT_DIRECTORY, path).apply()
+        binding.tvBackupRoot.text = path
+        Toast.makeText(requireContext(), "备份目标根目录已设置", Toast.LENGTH_SHORT).show()
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         loadSettings()
         refreshTaskStatus()
         refreshStatistics()
+        binding.btnSelectBackupRoot.setOnClickListener { backupRootPickerLauncher.launch(null) }
         binding.btnSaveSettings.setOnClickListener { saveSettings() }
         binding.btnStartBackup.setOnClickListener { startPeriodicBackup() }
         binding.btnStopBackup.setOnClickListener { stopBackup() }
     }
 
+    private fun resolveTreeUriToPath(uri: Uri): String? {
+        return try {
+            val docId = DocumentsContract.getTreeDocumentId(uri)
+            when {
+                docId.startsWith("primary:") -> {
+                    val rel = docId.removePrefix("primary:").trimStart('/')
+                    if (rel.isEmpty()) "/storage/emulated/0" else "/storage/emulated/0/$rel"
+                }
+                else -> null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun loadSettings() {
+        val root = prefs.getString(PREF_BACKUP_ROOT_DIRECTORY, null).orEmpty()
+        binding.tvBackupRoot.text = if (root.isEmpty()) getString(com.example.photobackup.R.string.backup_root_not_set) else root
         val interval = prefs.getLong(PREF_INTERVAL_MINUTES, 1440L).coerceAtLeast(15L)
         val syncInterval = prefs.getLong(PREF_SYNC_INTERVAL_MINUTES, 60L).coerceAtLeast(15L)
         binding.etIntervalMinutes.setText(interval.toString())
@@ -85,27 +128,25 @@ class SettingsFragment : Fragment() {
                 .show()
             return
         }
+        val backupRoot = prefs.getString(PREF_BACKUP_ROOT_DIRECTORY, null).orEmpty().trim()
+        if (backupRoot.isEmpty()) {
+            Toast.makeText(requireContext(), getString(com.example.photobackup.R.string.please_set_backup_root), Toast.LENGTH_LONG).show()
+            return
+        }
         val categoryRepo = com.example.photobackup.data.CategoryRepository(requireContext())
-        val categories = categoryRepo.getCategories()
-        val allFolders = categories.flatMap { it.backupFolders }.distinct()
-        val allDestinations = categories.flatMap { it.effectiveBackupDestinations() }.distinct()
-        if (allFolders.isEmpty()) {
+        val categories = categoryRepo.getCategories().filter { it.backupFolders.isNotEmpty() }
+        if (categories.isEmpty()) {
             Toast.makeText(requireContext(), "请先在首页为类别添加备份文件夹", Toast.LENGTH_LONG).show()
             return
         }
-        if (allDestinations.isEmpty()) {
-            Toast.makeText(requireContext(), "请先在类别详情中通过「编辑」添加备份目标目录", Toast.LENGTH_LONG).show()
-            return
-        }
         val interval = (binding.etIntervalMinutes.text.toString().toLongOrNull() ?: 1440L).coerceAtLeast(15L)
-        val config = PhotoBackupManager.BackupConfig(
-            backupFolders = allFolders,
-            backupDestinations = allDestinations,
+        PhotoBackupManager.getInstance(requireContext()).setupPeriodicBackupFromCategories(
+            backupRoot = backupRoot,
+            categories = categories,
             intervalMinutes = interval,
             requiresNetwork = binding.cbRequiresNetwork.isChecked,
             requiresCharging = binding.cbRequiresCharging.isChecked
         )
-        PhotoBackupManager.getInstance(requireContext()).setupPeriodicBackup(config)
         val syncInterval = (binding.etSyncIntervalMinutes.text.toString().toLongOrNull() ?: 60L).coerceAtLeast(15L)
         SyncHelper.setupSync(requireContext(), syncInterval)
         saveSettings()
@@ -153,7 +194,8 @@ class SettingsFragment : Fragment() {
     }
 
     companion object {
-        private const val PREFS_NAME = "photo_backup_prefs"
+        const val PREFS_NAME = "photo_backup_prefs"
+        const val PREF_BACKUP_ROOT_DIRECTORY = "backup_root_directory"
         private const val PREF_INTERVAL_MINUTES = "interval_minutes"
         private const val PREF_SYNC_INTERVAL_MINUTES = "sync_interval_minutes"
         private const val PREF_REQUIRES_NETWORK = "requires_network"
