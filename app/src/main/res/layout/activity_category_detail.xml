@@ -70,7 +70,7 @@
             android:layout_marginBottom="16dp"
             tools:text="本地文件：15 个" />
 
-        <!-- 备份目标由设置中的「备份目标根目录」决定，保存到 根目录/类别/类别名 -->
+        <!-- 备份目标由设置中的「备份目标根目录」决定，保存到 根目录/类别名 -->
 
         <!-- 同步：选择云端备份列表，将多个文件同步到本地 -->
         <com.google.android.material.button.MaterialButton

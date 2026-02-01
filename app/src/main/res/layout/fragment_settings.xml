@@ -20,7 +20,7 @@
             android:textStyle="bold"
             android:layout_marginBottom="16dp" />
 
-        <!-- 备份目标根目录（类别备份到 根目录/类别/类别名） -->
+        <!-- 备份目标根目录（类别备份到 根目录/类别名） -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

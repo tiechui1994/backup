@@ -114,14 +114,13 @@ class PhotoBackupManager private constructor(private val context: Context) {
         }
     }
 
-    /** 备份目标路径：根目录/类别/类别名 */
+    /** 备份目标路径：根目录/类别名 */
     private fun categoryDestination(root: String, category: Category): String {
-        val categoryDir = "类别"
-        return File(File(root, categoryDir), category.name).absolutePath
+        return File(root, category.name).absolutePath
     }
 
     /**
-     * 按类别设置定时备份：每个类别的备份目标为 根目录/类别/类别名
+     * 按类别设置定时备份：每个类别的备份目标为 根目录/类别名
      */
     fun setupPeriodicBackupFromCategories(
         backupRoot: String,

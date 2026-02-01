@@ -155,7 +155,7 @@ class CategoryDetailActivity : AppCompatActivity() {
             Toast.makeText(this, getString(com.example.photobackup.R.string.please_set_backup_root), Toast.LENGTH_SHORT).show()
             return
         }
-        val dest = File(File(backupRoot, "类别"), c.name).absolutePath
+        val dest = File(backupRoot, c.name).absolutePath
         val config = PhotoBackupManager.BackupConfig(
             backupFolders = c.backupFolders,
             backupDestinations = listOf(dest),

@@ -52,10 +52,10 @@ class PhotoBackupWorker(
             val backupDestinations = destinationsString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
             val categoryId = inputData.getString(KEY_CATEGORY_ID)
             
-            // 初始化日志落地（取第一个有效目标目录）
-            val firstDest = backupDestinations.firstOrNull()
-            if (firstDest != null) {
-                AppLogger.init(firstDest)
+            // 初始化日志落地：根目录/logs（从第一个目标目录推导根目录）
+            val backupRoot = backupDestinations.firstOrNull()?.let { File(it).parent }
+            if (backupRoot != null) {
+                AppLogger.init(backupRoot)
             }
             
             AppLogger.d(TAG, "开始执行备份任务，涉及 ${backupFolders.size} 个文件夹, 目标目录: ${backupDestinations.size} 个")

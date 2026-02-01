@@ -20,11 +20,11 @@ object AppLogger {
 
     /**
      * 初始化日志目录
-     * @param path 备份目标目录，日志将存放在该目录下的 logs 子目录中
+     * @param root 备份根目录，日志将存放在 根目录/logs
      */
-    fun init(path: String) {
+    fun init(root: String) {
         try {
-            val dir = File(path, "logs")
+            val dir = File(root, "logs")
             if (!dir.exists()) {
                 dir.mkdirs()
             }
