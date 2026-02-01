@@ -22,6 +22,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.core.content.ContextCompat
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -102,6 +103,7 @@ class SettingsFragment : Fragment() {
         val root = prefs.getString(PREF_BACKUP_ROOT_DIRECTORY, null).orEmpty()
         binding.tvBackupRoot.text = if (root.isEmpty()) getString(com.example.photobackup.R.string.backup_root_not_set) else root
         refreshBackupModeBadges()
+        refreshCloudConfigSummary()
         val interval = prefs.getLong(PREF_INTERVAL_MINUTES, 1440L).coerceAtLeast(15L)
         val syncInterval = prefs.getLong(PREF_SYNC_INTERVAL_MINUTES, 60L).coerceAtLeast(15L)
         binding.etIntervalMinutes.setText(interval.toString())
@@ -126,8 +128,29 @@ class SettingsFragment : Fragment() {
     private fun refreshBackupModeBadges() {
         val mode = prefs.getString(PREF_BACKUP_MODE, BACKUP_MODE_LOCAL) ?: BACKUP_MODE_LOCAL
         val isLocalActive = mode == BACKUP_MODE_LOCAL
-        binding.tvBackupRootActive.visibility = if (isLocalActive) View.VISIBLE else View.GONE
-        binding.tvCloudConfigActive.visibility = if (isLocalActive) View.GONE else View.VISIBLE
+        val activeColor = ContextCompat.getColor(requireContext(), com.example.photobackup.R.color.backup_section_active)
+        val inactiveColor = ContextCompat.getColor(requireContext(), com.example.photobackup.R.color.backup_section_inactive)
+        binding.tvBackupRootTitle.setTextColor(if (isLocalActive) activeColor else inactiveColor)
+        binding.tvCloudConfigTitle.setTextColor(if (isLocalActive) inactiveColor else activeColor)
+    }
+
+    private fun refreshCloudConfigSummary() {
+        val baseUrl = prefs.getString(PREF_CLOUD_BASE_URL, null).orEmpty().trim()
+        val userid = prefs.getString(PREF_CLOUD_USER_ID, null).orEmpty().trim()
+        if (baseUrl.isNotEmpty() || userid.isNotEmpty()) {
+            binding.tvCloudConfigSummary.visibility = View.VISIBLE
+            binding.tvCloudConfigSummary.text = buildString {
+                append(getString(com.example.photobackup.R.string.cloud_base_url))
+                append("：")
+                append(if (baseUrl.isEmpty()) getString(com.example.photobackup.R.string.backup_root_not_set) else baseUrl)
+                append("\n")
+                append(getString(com.example.photobackup.R.string.cloud_user_id))
+                append("：")
+                append(if (userid.isEmpty()) getString(com.example.photobackup.R.string.backup_root_not_set) else userid)
+            }
+        } else {
+            binding.tvCloudConfigSummary.visibility = View.GONE
+        }
     }
 
     private fun startPeriodicBackup() {
@@ -215,6 +238,7 @@ class SettingsFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         refreshBackupModeBadges()
+        refreshCloudConfigSummary()
         refreshTaskStatus()
         refreshStatistics()
     }

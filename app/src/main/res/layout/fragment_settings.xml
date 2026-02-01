@@ -20,30 +20,15 @@
             android:textStyle="bold"
             android:layout_marginBottom="16dp" />
 
-        <!-- 备份目标根目录（类别备份到 根目录/类别名）与云端备份二选一，当前生效会标注 -->
-        <LinearLayout
+        <!-- 备份目标根目录（类别备份到 根目录/类别名）与云端备份二选一，当前生效的标题以颜色标注 -->
+        <TextView
+            android:id="@+id/tv_backup_root_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginBottom="4dp">
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/backup_root_directory"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-            <TextView
-                android:id="@+id/tv_backup_root_active"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/backup_mode_active"
-                android:textSize="12sp"
-                android:textColor="?attr/colorPrimary"
-                android:visibility="gone"
-                tools:visibility="visible" />
-        </LinearLayout>
+            android:text="@string/backup_root_directory"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -70,29 +55,14 @@
             android:layout_marginBottom="20dp" />
 
         <!-- 云端备份配置（与备份目标根目录二选一） -->
-        <LinearLayout
+        <TextView
+            android:id="@+id/tv_cloud_config_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginBottom="4dp">
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/cloud_backup_config"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-            <TextView
-                android:id="@+id/tv_cloud_config_active"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/backup_mode_active"
-                android:textSize="12sp"
-                android:textColor="?attr/colorPrimary"
-                android:visibility="gone"
-                tools:visibility="visible" />
-        </LinearLayout>
+            android:text="@string/cloud_backup_config"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -100,6 +70,18 @@
             android:textSize="12sp"
             android:textColor="@android:color/darker_gray"
             android:layout_marginBottom="8dp" />
+        <TextView
+            android:id="@+id/tv_cloud_config_summary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="@android:color/darker_gray"
+            android:maxLines="4"
+            android:ellipsize="middle"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone"
+            tools:text="请求域名：https://api.example.com\n用户 ID：user123"
+            tools:visibility="visible" />
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_cloud_backup_config"
             style="@style/Widget.MaterialComponents.Button.OutlinedButton"
