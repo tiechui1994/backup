@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * 云端备份 API
- * PUT /api/file/upload  Header: userid, category, sha1sum  Body: 文件内容  响应: { "fileId": "xxx" }
+ * PUT /api/file/upload  Header: userid, category, sha1sum, filename  Body: 文件内容  响应: { "fileId": "xxx" }
  * GET /api/file/download?fileId=xxx  Header: userid, category, filename  响应: 文件内容
  */
 object CloudBackupApi {
@@ -43,6 +43,7 @@ object CloudBackupApi {
             return null
         }
         return try {
+            val filename = file.name.ifBlank { file.absolutePath.substringAfterLast('/').ifBlank { "unknown" } }
             val url = "${normalizeBaseUrl(baseUrl)}/api/file/upload"
             val body = file.readBytes().toRequestBody("application/octet-stream".toMediaType())
             val request = Request.Builder()
@@ -51,6 +52,7 @@ object CloudBackupApi {
                 .addHeader("userid", userid)
                 .addHeader("category", encodeHeaderValue(category))
                 .addHeader("sha1sum", sha1sum)
+                .addHeader("filename", encodeHeaderValue(filename))
                 .build()
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
