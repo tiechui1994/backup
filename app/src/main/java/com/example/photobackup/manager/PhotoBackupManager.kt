@@ -117,7 +117,7 @@ class PhotoBackupManager private constructor(private val context: Context) {
     /** 备份目标路径：根目录/类别/类别名 */
     private fun categoryDestination(root: String, category: Category): String {
         val categoryDir = "类别"
-        return File(root, categoryDir, category.name).absolutePath
+        return File(File(root, categoryDir), category.name).absolutePath
     }
 
     /**
