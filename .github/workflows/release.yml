@@ -133,8 +133,6 @@ jobs:
         name: installable-apks
         path: |
           app/build/**/*.apk
-          app/keystore.properties
-          app/release.keystore
         retention-days: 1
         
 

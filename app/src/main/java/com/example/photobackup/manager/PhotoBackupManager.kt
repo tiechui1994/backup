@@ -39,7 +39,7 @@ class PhotoBackupManager private constructor(private val context: Context) {
      */
     data class BackupConfig(
         val backupFolders: List<String>, // 源文件夹列表
-        val backupDestination: String = "", // 备份目标目录
+        val backupDestinations: List<String> = emptyList(), // 备份目标目录列表（多选，通过文件夹选择器确认真实存在）
         val intervalMinutes: Long = 1440, // 默认 1440 分钟（24小时）执行一次
         val requiresNetwork: Boolean = false,
         val requiresCharging: Boolean = false
@@ -75,11 +75,12 @@ class PhotoBackupManager private constructor(private val context: Context) {
                 }
                 .build()
             
-            // 构建工作数据 - 将文件夹列表转换为逗号分隔的字符串传递给 Worker
+            // 构建工作数据 - 将文件夹列表与目标目录列表转换为逗号分隔的字符串传递给 Worker
             val foldersString = config.backupFolders.joinToString(",")
+            val destinationsString = config.backupDestinations.joinToString(",")
             val inputData = workDataOf(
                 PhotoBackupWorker.KEY_BACKUP_FOLDERS to foldersString,
-                PhotoBackupWorker.KEY_BACKUP_DESTINATION to config.backupDestination,
+                PhotoBackupWorker.KEY_BACKUP_DESTINATION to destinationsString,
                 PhotoBackupWorker.KEY_INTERVAL_MINUTES to config.intervalMinutes,
                 PhotoBackupWorker.KEY_REQUIRES_NETWORK to config.requiresNetwork,
                 PhotoBackupWorker.KEY_REQUIRES_CHARGING to config.requiresCharging
@@ -158,9 +159,10 @@ class PhotoBackupManager private constructor(private val context: Context) {
                 .build()
             
             val foldersString = config.backupFolders.joinToString(",")
+            val destinationsString = config.backupDestinations.joinToString(",")
             val pairs = mutableListOf<Pair<String, Any>>(
                 PhotoBackupWorker.KEY_BACKUP_FOLDERS to foldersString,
-                PhotoBackupWorker.KEY_BACKUP_DESTINATION to config.backupDestination
+                PhotoBackupWorker.KEY_BACKUP_DESTINATION to destinationsString
             )
             if (categoryId != null) pairs.add(PhotoBackupWorker.KEY_CATEGORY_ID to categoryId)
             val inputData = workDataOf(*pairs.toTypedArray())

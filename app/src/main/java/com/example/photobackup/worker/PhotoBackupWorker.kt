@@ -48,15 +48,18 @@ class PhotoBackupWorker(
                 )
             
             val backupFolders = foldersString.split(",").filter { it.isNotEmpty() }
-            val backupDestination = inputData.getString(KEY_BACKUP_DESTINATION) ?: ""
+            val destinationsString = inputData.getString(KEY_BACKUP_DESTINATION) ?: ""
+            val backupDestinations = destinationsString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                .filter { path -> File(path).exists() && File(path).isDirectory }
             val categoryId = inputData.getString(KEY_CATEGORY_ID)
             
-            // 初始化日志落地
-            if (backupDestination.isNotEmpty()) {
-                AppLogger.init(backupDestination)
+            // 初始化日志落地（取第一个有效目标目录）
+            val firstDest = backupDestinations.firstOrNull()
+            if (firstDest != null) {
+                AppLogger.init(firstDest)
             }
             
-            AppLogger.d(TAG, "开始执行备份任务，涉及 ${backupFolders.size} 个文件夹, 目标目录: $backupDestination")
+            AppLogger.d(TAG, "开始执行备份任务，涉及 ${backupFolders.size} 个文件夹, 目标目录: ${backupDestinations.size} 个")
             
             // 启动前台服务
             PhotoBackupForegroundService.startService(applicationContext, "正在备份照片...")
@@ -97,8 +100,17 @@ class PhotoBackupWorker(
                         return@forEachIndexed
                     }
                     
-                    // 备份文件到目标目录
-                    val backupSuccess = backupPhoto(file, backupDestination)
+                    // 备份文件到所有目标目录（多选且已确认真实存在）
+                    var backupSuccess = backupDestinations.isEmpty()
+                    if (!backupSuccess) {
+                        backupSuccess = true
+                        for (dest in backupDestinations) {
+                            if (!backupPhoto(file, dest)) {
+                                backupSuccess = false
+                                break
+                            }
+                        }
+                    }
                     
                     if (backupSuccess) {
                         val backedUpPhoto = BackedUpPhoto(
@@ -106,7 +118,7 @@ class PhotoBackupWorker(
                             filePath = file.absolutePath,
                             fileName = file.name,
                             fileSize = file.length(),
-                            uploadUrl = backupDestination,
+                            uploadUrl = backupDestinations.firstOrNull() ?: "",
                             categoryId = categoryId
                         )
                         dao.insert(backedUpPhoto)

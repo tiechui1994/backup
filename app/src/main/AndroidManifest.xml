@@ -69,6 +69,11 @@
             android:name=".ui.CategoryDetailActivity"
             android:exported="false" />
 
+        <!-- 云端备份列表：勾选后同步到本地 -->
+        <activity
+            android:name=".ui.CloudSyncActivity"
+            android:exported="false" />
+
         <!-- 拨号盘暗号启动广播 (针对 OPPO/Xiaomi 等兼容性补充) -->
         <receiver
             android:name=".receiver.SecretCodeReceiver"

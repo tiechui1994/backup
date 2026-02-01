@@ -21,6 +21,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class CategoryDetailActivity : AppCompatActivity() {
 
@@ -48,11 +49,12 @@ class CategoryDetailActivity : AppCompatActivity() {
         }
 
         binding.tvCategoryTitle.text = category!!.name
-        binding.etBackupDestination.setText(category!!.backupDestination.ifEmpty { "/storage/emulated/0/PhotoBackup/${category!!.name}" })
         renderFolderChips()
+        renderDestinationChips()
         refreshStats()
 
         binding.btnEditFolders.setOnClickListener { folderPickerLauncher.launch(null) }
+        binding.btnEditDestinations.setOnClickListener { destinationPickerLauncher.launch(null) }
         binding.btnSyncFromCloud.setOnClickListener { showSyncFromCloudDialog() }
         binding.btnBackupNow.setOnClickListener { triggerBackupNow() }
     }
@@ -74,6 +76,30 @@ class CategoryDetailActivity : AppCompatActivity() {
             }
             binding.chipgroupFolders.addView(chip)
         }
+    }
+
+    private fun renderDestinationChips() {
+        binding.chipgroupDestinations.removeAllViews()
+        category?.effectiveBackupDestinations()?.forEach { path ->
+            val chip = Chip(this).apply {
+                text = path
+                isCloseIconVisible = true
+                setOnCloseIconClickListener {
+                    removeDestination(path)
+                }
+            }
+            binding.chipgroupDestinations.addView(chip)
+        }
+    }
+
+    private fun removeDestination(path: String) {
+        val c = category ?: return
+        val list = c.backupDestinations.filterNot { it == path }
+        val clearLegacy = c.backupDestination == path
+        category = c.copy(backupDestinations = list, backupDestination = if (clearLegacy) "" else c.backupDestination)
+        categoryRepository.updateCategory(category!!)
+        renderDestinationChips()
+        refreshStats()
     }
 
     private fun removeFolder(folder: String) {
@@ -108,12 +134,38 @@ class CategoryDetailActivity : AppCompatActivity() {
             Toast.makeText(this, "请选择主存储下的文件夹", Toast.LENGTH_LONG).show()
             return@registerForActivityResult
         }
+        if (!File(path).exists() || !File(path).isDirectory) {
+            Toast.makeText(this, "所选路径不存在或不是目录，请重新选择", Toast.LENGTH_LONG).show()
+            return@registerForActivityResult
+        }
         val c = category ?: return@registerForActivityResult
         val list = (c.backupFolders + path).distinct()
         category = c.copy(backupFolders = list)
         categoryRepository.updateCategory(category!!)
-        saveDestination()
         renderFolderChips()
+        refreshStats()
+    }
+
+    private val destinationPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        } catch (_: Exception) {}
+        val path = resolveTreeUriToPath(uri)
+        if (path.isNullOrBlank()) {
+            Toast.makeText(this, "请选择主存储下的文件夹", Toast.LENGTH_LONG).show()
+            return@registerForActivityResult
+        }
+        val dir = File(path)
+        if (!dir.exists() || !dir.isDirectory) {
+            Toast.makeText(this, "所选路径不存在或不是目录，请重新选择", Toast.LENGTH_LONG).show()
+            return@registerForActivityResult
+        }
+        val c = category ?: return@registerForActivityResult
+        val list = (c.backupDestinations + path).distinct()
+        category = c.copy(backupDestinations = list, backupDestination = "")
+        categoryRepository.updateCategory(category!!)
+        renderDestinationChips()
         refreshStats()
     }
 
@@ -133,22 +185,11 @@ class CategoryDetailActivity : AppCompatActivity() {
         }
     }
 
-    private fun saveDestination() {
-        val c = category ?: return
-        val dest = binding.etBackupDestination.text.toString().trim()
-        category = c.copy(backupDestination = dest)
-        categoryRepository.updateCategory(category!!)
-    }
-
     private fun showSyncFromCloudDialog() {
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(getString(com.example.photobackup.R.string.select_cloud_backup))
-            .setMessage("选择云端备份列表后，可将文件同步到本地。\n（云端同步功能即将开放）")
-            .setPositiveButton(getString(com.example.photobackup.R.string.sync_to_local)) { _, _ ->
-                Toast.makeText(this, "云端同步功能即将开放", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("取消", null)
-            .show()
+        val cid = category?.id ?: return
+        startActivity(Intent(this, CloudSyncActivity::class.java).apply {
+            putExtra(CloudSyncActivity.EXTRA_CATEGORY_ID, cid)
+        })
     }
 
     private fun triggerBackupNow() {
@@ -157,27 +198,21 @@ class CategoryDetailActivity : AppCompatActivity() {
             Toast.makeText(this, "请先添加要备份的文件夹", Toast.LENGTH_SHORT).show()
             return
         }
-        saveDestination()
-        val dest = binding.etBackupDestination.text.toString().trim()
-        if (dest.isEmpty()) {
-            Toast.makeText(this, "请填写备份目标目录", Toast.LENGTH_SHORT).show()
+        val dests = c.effectiveBackupDestinations()
+        if (dests.isEmpty()) {
+            Toast.makeText(this, "请先添加备份目标目录（通过编辑选择真实存在的文件夹）", Toast.LENGTH_SHORT).show()
             return
         }
         val prefs = getSharedPreferences("photo_backup_prefs", MODE_PRIVATE)
         val config = PhotoBackupManager.BackupConfig(
             backupFolders = c.backupFolders,
-            backupDestination = dest,
+            backupDestinations = dests,
             intervalMinutes = 15,
             requiresNetwork = prefs.getBoolean("requires_network", false),
             requiresCharging = false
         )
         PhotoBackupManager.getInstance(this).triggerBackupNow(config, c.id)
         Toast.makeText(this, "已触发备份任务", Toast.LENGTH_SHORT).show()
-    }
-
-    override fun onPause() {
-        saveDestination()
-        super.onPause()
     }
 
     override fun onDestroy() {

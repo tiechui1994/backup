@@ -84,6 +84,58 @@ object UploadApi {
             false
         }
     }
+
+    /**
+     * 在备份目录中查找实际文件（可能与 fileName 一致，或带时间戳后缀）
+     */
+    fun findBackupFile(backupDir: String, fileName: String): File? {
+        if (backupDir.isEmpty()) return null
+        val dir = File(backupDir)
+        if (!dir.exists() || !dir.isDirectory) return null
+        val exact = File(dir, fileName)
+        if (exact.exists() && exact.isFile) return exact
+        val nameWithoutExt = fileName.substringBeforeLast('.')
+        val ext = fileName.substringAfterLast('.', "")
+        val prefix = "${nameWithoutExt}_"
+        dir.listFiles()?.forEach { f ->
+            if (f.isFile && f.name.startsWith(prefix) && (ext.isEmpty() || f.name.endsWith(".$ext")))
+                return f
+        }
+        return null
+    }
+
+    /**
+     * 将备份文件复制到本地目标目录（用于同步到本地）
+     */
+    suspend fun copyFromBackupToLocal(backupFile: File, destDir: File): Boolean {
+        return try {
+            if (!backupFile.exists() || !backupFile.isFile) {
+                AppLogger.e(TAG, "备份文件不存在: ${backupFile.absolutePath}")
+                return false
+            }
+            if (!destDir.exists()) destDir.mkdirs()
+            if (!destDir.isDirectory || !destDir.canWrite()) {
+                AppLogger.e(TAG, "目标目录无效或不可写: ${destDir.absolutePath}")
+                return false
+            }
+            val destFile = File(destDir, backupFile.name)
+            val finalDest = if (destFile.exists()) {
+                val n = backupFile.nameWithoutExtension
+                val e = backupFile.extension
+                File(destDir, "${n}_${System.currentTimeMillis()}.$e")
+            } else destFile
+            FileInputStream(backupFile).use { input ->
+                FileOutputStream(finalDest).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            AppLogger.d(TAG, "同步到本地成功: ${backupFile.name} -> ${finalDest.absolutePath}")
+            true
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "同步到本地失败: ${backupFile.absolutePath}", e)
+            false
+        }
+    }
 }
 
 

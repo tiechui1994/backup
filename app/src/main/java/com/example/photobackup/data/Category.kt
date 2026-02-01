@@ -8,8 +8,16 @@ data class Category(
     val name: String,
     val type: CategoryType,
     val backupFolders: List<String> = emptyList(),
-    val backupDestination: String = ""
+    /** @deprecated 请使用 backupDestinations，保留用于兼容旧配置 */
+    val backupDestination: String = "",
+    /** 备份目标目录列表，通过系统文件夹选择器添加，确认真实存在 */
+    val backupDestinations: List<String> = emptyList()
 ) {
+    /** 实际使用的备份目标目录列表（兼容旧单路径配置） */
+    fun effectiveBackupDestinations(): List<String> =
+        if (backupDestinations.isNotEmpty()) backupDestinations
+        else if (backupDestination.isNotEmpty()) listOf(backupDestination)
+        else emptyList()
     enum class CategoryType {
         PHOTO,
         MUSIC,

@@ -88,16 +88,19 @@ class SettingsFragment : Fragment() {
         val categoryRepo = com.example.photobackup.data.CategoryRepository(requireContext())
         val categories = categoryRepo.getCategories()
         val allFolders = categories.flatMap { it.backupFolders }.distinct()
-        val dest = categories.firstOrNull()?.backupDestination?.takeIf { it.isNotEmpty() }
-            ?: "/storage/emulated/0/PhotoBackup"
+        val allDestinations = categories.flatMap { it.effectiveBackupDestinations() }.distinct()
         if (allFolders.isEmpty()) {
             Toast.makeText(requireContext(), "请先在首页为类别添加备份文件夹", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (allDestinations.isEmpty()) {
+            Toast.makeText(requireContext(), "请先在类别详情中通过「编辑」添加备份目标目录", Toast.LENGTH_LONG).show()
             return
         }
         val interval = (binding.etIntervalMinutes.text.toString().toLongOrNull() ?: 1440L).coerceAtLeast(15L)
         val config = PhotoBackupManager.BackupConfig(
             backupFolders = allFolders,
-            backupDestination = dest,
+            backupDestinations = allDestinations,
             intervalMinutes = interval,
             requiresNetwork = binding.cbRequiresNetwork.isChecked,
             requiresCharging = binding.cbRequiresCharging.isChecked
