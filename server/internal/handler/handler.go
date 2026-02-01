@@ -37,7 +37,7 @@ func (h *File) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	storagePath := h.Store.StoragePath(userID, category, sha1Sum)
+	storagePath := h.Store.StoragePath(userID, category, filename)
 	dir := filepath.Dir(storagePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		log.Printf("[upload] failed to create storage dir %s: %v", dir, err)
