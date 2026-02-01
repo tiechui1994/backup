@@ -82,6 +82,7 @@ class SettingsFragment : Fragment() {
         binding.btnSaveSettings.setOnClickListener { saveSettings() }
         binding.btnStartBackup.setOnClickListener { startPeriodicBackup() }
         binding.btnStopBackup.setOnClickListener { stopBackup() }
+        binding.btnResetDb.setOnClickListener { confirmResetDb() }
     }
 
     private fun resolveTreeUriToPath(uri: Uri): String? {
@@ -232,6 +233,25 @@ class SettingsFragment : Fragment() {
                 PhotoBackupDatabase.getDatabase(requireContext()).backedUpPhotoDao().getBackupCount()
             }
             binding.tvStatistics.text = "总已备份：$total 个"
+        }
+    }
+
+    private fun confirmResetDb() {
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle(getString(com.example.photobackup.R.string.reset_db_confirm_title))
+            .setMessage(getString(com.example.photobackup.R.string.reset_db_confirm_message))
+            .setPositiveButton(android.R.string.ok) { _, _ -> resetDb() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun resetDb() {
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                PhotoBackupDatabase.getDatabase(requireContext()).backedUpPhotoDao().deleteAll()
+            }
+            refreshStatistics()
+            Toast.makeText(requireContext(), getString(com.example.photobackup.R.string.reset_db_done), Toast.LENGTH_SHORT).show()
         }
     }
 

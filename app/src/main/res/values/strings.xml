@@ -49,6 +49,10 @@
     <string name="backup_destination_edit_hint">通过下方「编辑」添加目录，仅保存真实存在的路径</string>
     <string name="choose_backup_folders">选择备份文件夹</string>
     <string name="save_settings">保存设置</string>
+    <string name="reset_db">DB 重置</string>
+    <string name="reset_db_confirm_title">确认重置</string>
+    <string name="reset_db_confirm_message">将清空所有已备份记录，下次备份会重新上传。确定继续？</string>
+    <string name="reset_db_done">数据库已重置</string>
 </resources>
 
 

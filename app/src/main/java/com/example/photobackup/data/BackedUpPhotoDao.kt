@@ -42,6 +42,12 @@ interface BackedUpPhotoDao {
     suspend fun deleteByMd5(md5: String)
     
     /**
+     * 清空所有已备份记录（DB 重置）
+     */
+    @Query("DELETE FROM backed_up_photos")
+    suspend fun deleteAll(): Int
+
+    /**
      * 获取备份统计信息
      */
     @Query("SELECT COUNT(*) FROM backed_up_photos")
