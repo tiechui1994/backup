@@ -127,7 +127,8 @@ class PhotoBackupManager private constructor(private val context: Context) {
         categories: List<Category>,
         intervalMinutes: Long,
         requiresNetwork: Boolean = false,
-        requiresCharging: Boolean = false
+        requiresCharging: Boolean = false,
+        useCloudApi: Boolean = false
     ) {
         try {
             val workManager = try {
@@ -145,16 +146,28 @@ class PhotoBackupManager private constructor(private val context: Context) {
                 .build()
             val interval = intervalMinutes.coerceAtLeast(15L)
             categories.forEach { category ->
-                val dest = categoryDestination(backupRoot, category)
+                val dest = if (useCloudApi) "cloud" else categoryDestination(backupRoot, category)
                 val foldersString = category.backupFolders.joinToString(",")
-                val inputData = workDataOf(
-                    PhotoBackupWorker.KEY_BACKUP_FOLDERS to foldersString,
-                    PhotoBackupWorker.KEY_BACKUP_DESTINATION to dest,
-                    PhotoBackupWorker.KEY_INTERVAL_MINUTES to interval,
-                    PhotoBackupWorker.KEY_REQUIRES_NETWORK to requiresNetwork,
-                    PhotoBackupWorker.KEY_REQUIRES_CHARGING to requiresCharging,
-                    PhotoBackupWorker.KEY_CATEGORY_ID to category.id
-                )
+                val inputData = if (useCloudApi) {
+                    workDataOf(
+                        PhotoBackupWorker.KEY_BACKUP_FOLDERS to foldersString,
+                        PhotoBackupWorker.KEY_BACKUP_DESTINATION to dest,
+                        PhotoBackupWorker.KEY_INTERVAL_MINUTES to interval,
+                        PhotoBackupWorker.KEY_REQUIRES_NETWORK to requiresNetwork,
+                        PhotoBackupWorker.KEY_REQUIRES_CHARGING to requiresCharging,
+                        PhotoBackupWorker.KEY_CATEGORY_ID to category.id,
+                        PhotoBackupWorker.KEY_CATEGORY_NAME to category.name
+                    )
+                } else {
+                    workDataOf(
+                        PhotoBackupWorker.KEY_BACKUP_FOLDERS to foldersString,
+                        PhotoBackupWorker.KEY_BACKUP_DESTINATION to dest,
+                        PhotoBackupWorker.KEY_INTERVAL_MINUTES to interval,
+                        PhotoBackupWorker.KEY_REQUIRES_NETWORK to requiresNetwork,
+                        PhotoBackupWorker.KEY_REQUIRES_CHARGING to requiresCharging,
+                        PhotoBackupWorker.KEY_CATEGORY_ID to category.id
+                    )
+                }
                 val workRequest = PeriodicWorkRequestBuilder<PhotoBackupWorker>(interval, TimeUnit.MINUTES)
                     .setConstraints(constraints)
                     .setInputData(inputData)
@@ -224,11 +237,18 @@ class PhotoBackupManager private constructor(private val context: Context) {
             
             val foldersString = config.backupFolders.joinToString(",")
             val destinationsString = config.backupDestinations.joinToString(",")
+            val isCloud = config.backupDestinations.firstOrNull() == "cloud"
             val pairs = mutableListOf<Pair<String, Any>>(
                 PhotoBackupWorker.KEY_BACKUP_FOLDERS to foldersString,
                 PhotoBackupWorker.KEY_BACKUP_DESTINATION to destinationsString
             )
-            if (categoryId != null) pairs.add(PhotoBackupWorker.KEY_CATEGORY_ID to categoryId)
+            if (categoryId != null) {
+                pairs.add(PhotoBackupWorker.KEY_CATEGORY_ID to categoryId)
+                if (isCloud) {
+                    val categoryName = com.example.photobackup.data.CategoryRepository(context).getCategory(categoryId)?.name ?: ""
+                    pairs.add(PhotoBackupWorker.KEY_CATEGORY_NAME to categoryName)
+                }
+            }
             val inputData = workDataOf(*pairs.toTypedArray())
             val workRequest = androidx.work.OneTimeWorkRequestBuilder<PhotoBackupWorker>()
                 .setConstraints(constraints)

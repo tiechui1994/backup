@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.example.photobackup.api.CloudBackupApi
 import com.example.photobackup.api.UploadApi
 import com.example.photobackup.data.CategoryRepository
 import com.example.photobackup.data.PhotoBackupDatabase
@@ -50,19 +51,42 @@ class CloudSyncActivity : AppCompatActivity() {
             Toast.makeText(this, getString(com.example.photobackup.R.string.please_select_files), Toast.LENGTH_SHORT).show()
             return@registerForActivityResult
         }
+        val cid = categoryId
+        val categoryName = if (cid != null) CategoryRepository(this).getCategory(cid)?.name else null
+        val prefs = getSharedPreferences(SettingsFragment.PREFS_NAME, MODE_PRIVATE)
+        val baseUrl = prefs.getString(SettingsFragment.PREF_CLOUD_BASE_URL, null).orEmpty().trim()
+        val userid = prefs.getString(SettingsFragment.PREF_CLOUD_USER_ID, null).orEmpty().trim()
+
         lifecycleScope.launch {
             var successCount = 0
             var failCount = 0
             withContext(Dispatchers.IO) {
                 selected.forEach { photo ->
-                    val backupDir = photo.uploadUrl ?: ""
-                    val file = UploadApi.findBackupFile(backupDir, photo.fileName)
-                    if (file != null) {
-                        val ok = UploadApi.copyFromBackupToLocal(file, destDir)
-                        if (ok) successCount++ else failCount++
-                    } else {
-                        failCount++
+                    val ok = when {
+                        photo.uploadUrl == "cloud" -> {
+                            if (baseUrl.isEmpty() || userid.isEmpty() || categoryName == null) false
+                            else {
+                                val bytes = CloudBackupApi.download(baseUrl, userid, categoryName, photo.fileName)
+                                if (bytes != null) {
+                                    val outFile = File(destDir, photo.fileName)
+                                    val finalFile = if (outFile.exists()) {
+                                        val base = photo.fileName.substringBeforeLast('.', photo.fileName)
+                                        val ext = photo.fileName.substringAfterLast('.', "")
+                                        val name = if (ext.isEmpty()) "${base}_${System.currentTimeMillis()}" else "${base}_${System.currentTimeMillis()}.$ext"
+                                        File(destDir, name)
+                                    } else outFile
+                                    java.io.FileOutputStream(finalFile).use { it.write(bytes) }
+                                    true
+                                } else false
+                            }
+                        }
+                        else -> {
+                            val backupDir = photo.uploadUrl ?: ""
+                            val file = UploadApi.findBackupFile(backupDir, photo.fileName)
+                            if (file != null) UploadApi.copyFromBackupToLocal(file, destDir) else false
+                        }
                     }
+                    if (ok) successCount++ else failCount++
                 }
             }
             if (successCount > 0) {

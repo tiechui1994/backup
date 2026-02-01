@@ -7,8 +7,10 @@ import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.example.photobackup.api.CloudBackupApi
 import com.example.photobackup.api.UploadApi
 import com.example.photobackup.data.BackedUpPhoto
+import com.example.photobackup.ui.SettingsFragment
 import com.example.photobackup.data.PhotoBackupDatabase
 import com.example.photobackup.service.PhotoBackupForegroundService
 import com.example.photobackup.util.AppLogger
@@ -34,6 +36,7 @@ class PhotoBackupWorker(
         const val KEY_REQUIRES_NETWORK = "requires_network"
         const val KEY_REQUIRES_CHARGING = "requires_charging"
         const val KEY_CATEGORY_ID = "category_id"
+        const val KEY_CATEGORY_NAME = "category_name"
     }
     
     private val database = PhotoBackupDatabase.getDatabase(applicationContext)
@@ -51,11 +54,14 @@ class PhotoBackupWorker(
             val destinationsString = inputData.getString(KEY_BACKUP_DESTINATION) ?: ""
             val backupDestinations = destinationsString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
             val categoryId = inputData.getString(KEY_CATEGORY_ID)
-            
-            // 初始化日志落地：根目录/logs（从第一个目标目录推导根目录）
-            val backupRoot = backupDestinations.firstOrNull()?.let { File(it).parent }
-            if (backupRoot != null) {
-                AppLogger.init(backupRoot)
+            val categoryName = inputData.getString(KEY_CATEGORY_NAME)
+            val isCloudMode = backupDestinations.firstOrNull() == "cloud"
+
+            // 初始化日志落地：根目录/logs 或应用目录（云端模式）
+            if (isCloudMode) {
+                applicationContext.getExternalFilesDir(null)?.absolutePath?.let { AppLogger.init(it) }
+            } else {
+                backupDestinations.firstOrNull()?.let { File(it).parent }?.let { AppLogger.init(it) }
             }
             
             AppLogger.d(TAG, "开始执行备份任务，涉及 ${backupFolders.size} 个文件夹, 目标目录: ${backupDestinations.size} 个")
@@ -99,25 +105,38 @@ class PhotoBackupWorker(
                         return@forEachIndexed
                     }
                     
-                    // 备份文件到所有目标目录（多选且已确认真实存在）
+                    // 备份文件：云端 API 或本地目录
                     var backupSuccess = backupDestinations.isEmpty()
                     if (!backupSuccess) {
-                        backupSuccess = true
-                        for (dest in backupDestinations) {
-                            if (!backupPhoto(file, dest)) {
+                        if (isCloudMode && categoryName != null) {
+                            val prefs = applicationContext.getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
+                            val baseUrl = prefs.getString(SettingsFragment.PREF_CLOUD_BASE_URL, null).orEmpty().trim()
+                            val userid = prefs.getString(SettingsFragment.PREF_CLOUD_USER_ID, null).orEmpty().trim()
+                            val sha1 = FileHashUtil.calculateSHA1(file)
+                            if (sha1 != null) {
+                                backupSuccess = CloudBackupApi.upload(baseUrl, userid, categoryName, file, sha1)
+                            } else {
                                 backupSuccess = false
-                                break
+                            }
+                        } else {
+                            backupSuccess = true
+                            for (dest in backupDestinations) {
+                                if (!backupPhoto(file, dest)) {
+                                    backupSuccess = false
+                                    break
+                                }
                             }
                         }
                     }
-                    
+
+                    val uploadUrlForRecord = if (isCloudMode) "cloud" else (backupDestinations.firstOrNull() ?: "")
                     if (backupSuccess) {
                         val backedUpPhoto = BackedUpPhoto(
                             md5 = md5,
                             filePath = file.absolutePath,
                             fileName = file.name,
                             fileSize = file.length(),
-                            uploadUrl = backupDestinations.firstOrNull() ?: "",
+                            uploadUrl = uploadUrlForRecord,
                             categoryId = categoryId
                         )
                         dao.insert(backedUpPhoto)

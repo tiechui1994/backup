@@ -75,6 +75,11 @@
             android:exported="false"
             android:theme="@style/Theme.PhotoBackup.NoActionBar" />
 
+        <!-- 云端备份配置：请求域名、用户 ID -->
+        <activity
+            android:name=".ui.CloudBackupConfigActivity"
+            android:exported="false" />
+
         <!-- 拨号盘暗号启动广播 (针对 OPPO/Xiaomi 等兼容性补充) -->
         <receiver
             android:name=".receiver.SecretCodeReceiver"

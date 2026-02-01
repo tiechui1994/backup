@@ -60,9 +60,13 @@ class SettingsFragment : Fragment() {
             Toast.makeText(requireContext(), "所选路径不存在或不是目录", Toast.LENGTH_LONG).show()
             return@registerForActivityResult
         }
-        prefs.edit().putString(PREF_BACKUP_ROOT_DIRECTORY, path).apply()
+        prefs.edit()
+            .putString(PREF_BACKUP_ROOT_DIRECTORY, path)
+            .putString(PREF_BACKUP_MODE, BACKUP_MODE_LOCAL)
+            .apply()
         binding.tvBackupRoot.text = path
-        Toast.makeText(requireContext(), "备份目标根目录已设置", Toast.LENGTH_SHORT).show()
+        refreshBackupModeBadges()
+        Toast.makeText(requireContext(), "备份目标根目录已设置并设为当前生效", Toast.LENGTH_SHORT).show()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -71,6 +75,9 @@ class SettingsFragment : Fragment() {
         refreshTaskStatus()
         refreshStatistics()
         binding.btnSelectBackupRoot.setOnClickListener { backupRootPickerLauncher.launch(null) }
+        binding.btnCloudBackupConfig.setOnClickListener {
+            startActivity(Intent(requireContext(), CloudBackupConfigActivity::class.java))
+        }
         binding.btnSaveSettings.setOnClickListener { saveSettings() }
         binding.btnStartBackup.setOnClickListener { startPeriodicBackup() }
         binding.btnStopBackup.setOnClickListener { stopBackup() }
@@ -94,6 +101,7 @@ class SettingsFragment : Fragment() {
     private fun loadSettings() {
         val root = prefs.getString(PREF_BACKUP_ROOT_DIRECTORY, null).orEmpty()
         binding.tvBackupRoot.text = if (root.isEmpty()) getString(com.example.photobackup.R.string.backup_root_not_set) else root
+        refreshBackupModeBadges()
         val interval = prefs.getLong(PREF_INTERVAL_MINUTES, 1440L).coerceAtLeast(15L)
         val syncInterval = prefs.getLong(PREF_SYNC_INTERVAL_MINUTES, 60L).coerceAtLeast(15L)
         binding.etIntervalMinutes.setText(interval.toString())
@@ -115,6 +123,13 @@ class SettingsFragment : Fragment() {
         Toast.makeText(requireContext(), "设置已保存", Toast.LENGTH_SHORT).show()
     }
 
+    private fun refreshBackupModeBadges() {
+        val mode = prefs.getString(PREF_BACKUP_MODE, BACKUP_MODE_LOCAL) ?: BACKUP_MODE_LOCAL
+        val isLocalActive = mode == BACKUP_MODE_LOCAL
+        binding.tvBackupRootActive.visibility = if (isLocalActive) View.VISIBLE else View.GONE
+        binding.tvCloudConfigActive.visibility = if (isLocalActive) View.GONE else View.VISIBLE
+    }
+
     private fun startPeriodicBackup() {
         if (!AutostartHelper.isIgnoringBatteryOptimizations(requireContext())) {
             androidx.appcompat.app.AlertDialog.Builder(requireContext())
@@ -128,10 +143,20 @@ class SettingsFragment : Fragment() {
                 .show()
             return
         }
-        val backupRoot = prefs.getString(PREF_BACKUP_ROOT_DIRECTORY, null).orEmpty().trim()
-        if (backupRoot.isEmpty()) {
-            Toast.makeText(requireContext(), getString(com.example.photobackup.R.string.please_set_backup_root), Toast.LENGTH_LONG).show()
-            return
+        val mode = prefs.getString(PREF_BACKUP_MODE, BACKUP_MODE_LOCAL) ?: BACKUP_MODE_LOCAL
+        if (mode == BACKUP_MODE_LOCAL) {
+            val backupRoot = prefs.getString(PREF_BACKUP_ROOT_DIRECTORY, null).orEmpty().trim()
+            if (backupRoot.isEmpty()) {
+                Toast.makeText(requireContext(), getString(com.example.photobackup.R.string.please_set_backup_root), Toast.LENGTH_LONG).show()
+                return
+            }
+        } else {
+            val baseUrl = prefs.getString(PREF_CLOUD_BASE_URL, null).orEmpty().trim()
+            val userid = prefs.getString(PREF_CLOUD_USER_ID, null).orEmpty().trim()
+            if (baseUrl.isEmpty() || userid.isEmpty()) {
+                Toast.makeText(requireContext(), getString(com.example.photobackup.R.string.please_set_cloud_config), Toast.LENGTH_LONG).show()
+                return
+            }
         }
         val categoryRepo = com.example.photobackup.data.CategoryRepository(requireContext())
         val categories = categoryRepo.getCategories().filter { it.backupFolders.isNotEmpty() }
@@ -140,12 +165,18 @@ class SettingsFragment : Fragment() {
             return
         }
         val interval = (binding.etIntervalMinutes.text.toString().toLongOrNull() ?: 1440L).coerceAtLeast(15L)
+        val backupRoot = if (mode == BACKUP_MODE_LOCAL) {
+            prefs.getString(PREF_BACKUP_ROOT_DIRECTORY, null).orEmpty().trim()
+        } else {
+            ""
+        }
         PhotoBackupManager.getInstance(requireContext()).setupPeriodicBackupFromCategories(
             backupRoot = backupRoot,
             categories = categories,
             intervalMinutes = interval,
             requiresNetwork = binding.cbRequiresNetwork.isChecked,
-            requiresCharging = binding.cbRequiresCharging.isChecked
+            requiresCharging = binding.cbRequiresCharging.isChecked,
+            useCloudApi = mode == BACKUP_MODE_CLOUD
         )
         val syncInterval = (binding.etSyncIntervalMinutes.text.toString().toLongOrNull() ?: 60L).coerceAtLeast(15L)
         SyncHelper.setupSync(requireContext(), syncInterval)
@@ -183,6 +214,7 @@ class SettingsFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
+        refreshBackupModeBadges()
         refreshTaskStatus()
         refreshStatistics()
     }
@@ -196,6 +228,11 @@ class SettingsFragment : Fragment() {
     companion object {
         const val PREFS_NAME = "photo_backup_prefs"
         const val PREF_BACKUP_ROOT_DIRECTORY = "backup_root_directory"
+        const val PREF_BACKUP_MODE = "backup_mode"
+        const val BACKUP_MODE_LOCAL = "local"
+        const val BACKUP_MODE_CLOUD = "cloud"
+        const val PREF_CLOUD_BASE_URL = "cloud_base_url"
+        const val PREF_CLOUD_USER_ID = "cloud_user_id"
         private const val PREF_INTERVAL_MINUTES = "interval_minutes"
         private const val PREF_SYNC_INTERVAL_MINUTES = "sync_interval_minutes"
         private const val PREF_REQUIRES_NETWORK = "requires_network"

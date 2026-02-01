@@ -48,11 +48,20 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_add_folders"
-            style="@style/Widget.MaterialComponents.Button.TextButton"
-            android:layout_width="wrap_content"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/add_folders"
-            android:layout_marginBottom="20dp" />
+            android:minHeight="48dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:layout_marginBottom="20dp"
+            app:icon="@android:drawable/ic_input_add"
+            app:iconGravity="textStart"
+            app:iconPadding="8dp"
+            app:iconTint="?attr/colorPrimary"
+            app:cornerRadius="8dp"
+            app:strokeWidth="1.5dp" />
 
         <!-- 已备份数量、本地文件数量 -->
         <TextView

@@ -150,15 +150,26 @@ class CategoryDetailActivity : AppCompatActivity() {
             return
         }
         val prefs = getSharedPreferences(SettingsFragment.PREFS_NAME, MODE_PRIVATE)
-        val backupRoot = prefs.getString(SettingsFragment.PREF_BACKUP_ROOT_DIRECTORY, null).orEmpty().trim()
-        if (backupRoot.isEmpty()) {
-            Toast.makeText(this, getString(com.example.photobackup.R.string.please_set_backup_root), Toast.LENGTH_SHORT).show()
-            return
+        val mode = prefs.getString(SettingsFragment.PREF_BACKUP_MODE, SettingsFragment.BACKUP_MODE_LOCAL) ?: SettingsFragment.BACKUP_MODE_LOCAL
+        val destinations = if (mode == SettingsFragment.BACKUP_MODE_CLOUD) {
+            val baseUrl = prefs.getString(SettingsFragment.PREF_CLOUD_BASE_URL, null).orEmpty().trim()
+            val userid = prefs.getString(SettingsFragment.PREF_CLOUD_USER_ID, null).orEmpty().trim()
+            if (baseUrl.isEmpty() || userid.isEmpty()) {
+                Toast.makeText(this, getString(com.example.photobackup.R.string.please_set_cloud_config), Toast.LENGTH_SHORT).show()
+                return
+            }
+            listOf("cloud")
+        } else {
+            val backupRoot = prefs.getString(SettingsFragment.PREF_BACKUP_ROOT_DIRECTORY, null).orEmpty().trim()
+            if (backupRoot.isEmpty()) {
+                Toast.makeText(this, getString(com.example.photobackup.R.string.please_set_backup_root), Toast.LENGTH_SHORT).show()
+                return
+            }
+            listOf(File(backupRoot, c.name).absolutePath)
         }
-        val dest = File(backupRoot, c.name).absolutePath
         val config = PhotoBackupManager.BackupConfig(
             backupFolders = c.backupFolders,
-            backupDestinations = listOf(dest),
+            backupDestinations = destinations,
             intervalMinutes = 15,
             requiresNetwork = prefs.getBoolean("requires_network", false),
             requiresCharging = false
