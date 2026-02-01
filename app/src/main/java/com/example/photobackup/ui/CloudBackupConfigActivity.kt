@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.example.photobackup.databinding.ActivityCloudBackupConfigBinding
+import com.example.photobackup.manager.PhotoBackupManager
 
 /**
  * 云端备份配置：请求域名、用户 ID
@@ -31,12 +32,14 @@ class CloudBackupConfigActivity : AppCompatActivity() {
                 Toast.makeText(this, getString(com.example.photobackup.R.string.please_set_cloud_config), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
+            // 同步目标变动：保存所有云端相关设置，并立即切换底层
             prefs.edit()
                 .putString(SettingsFragment.PREF_CLOUD_BASE_URL, baseUrl)
                 .putString(SettingsFragment.PREF_CLOUD_USER_ID, userid)
                 .putString(SettingsFragment.PREF_BACKUP_MODE, SettingsFragment.BACKUP_MODE_CLOUD)
                 .apply()
-            Toast.makeText(this, "云端备份配置已保存并设为当前生效", Toast.LENGTH_SHORT).show()
+            PhotoBackupManager.getInstance(this).reapplyPeriodicBackupFromCurrentSettings()
+            Toast.makeText(this, "云端备份配置已保存并设为当前生效，设置已保存", Toast.LENGTH_SHORT).show()
             finish()
         }
     }

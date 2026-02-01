@@ -67,7 +67,10 @@ class SettingsFragment : Fragment() {
             .apply()
         binding.tvBackupRoot.text = path
         refreshBackupModeBadges()
-        Toast.makeText(requireContext(), "备份目标根目录已设置并设为当前生效", Toast.LENGTH_SHORT).show()
+        // 同步目标变动：先保存所有设置，再立即切换底层
+        persistAllSettingsFromUi()
+        PhotoBackupManager.getInstance(requireContext()).reapplyPeriodicBackupFromCurrentSettings()
+        Toast.makeText(requireContext(), "备份目标根目录已设置并设为当前生效，设置已保存", Toast.LENGTH_SHORT).show()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -113,7 +116,8 @@ class SettingsFragment : Fragment() {
         binding.cbRequiresCharging.isChecked = prefs.getBoolean(PREF_REQUIRES_CHARGING, false)
     }
 
-    private fun saveSettings() {
+    /** 将当前 UI 上的所有设置写入 prefs 并应用（不弹 Toast）。同步目标变动时先调用此方法再 reapply。 */
+    private fun persistAllSettingsFromUi() {
         val interval = (binding.etIntervalMinutes.text.toString().toLongOrNull() ?: 1440L).coerceAtLeast(15L)
         val syncInterval = (binding.etSyncIntervalMinutes.text.toString().toLongOrNull() ?: 60L).coerceAtLeast(15L)
         prefs.edit()
@@ -123,6 +127,10 @@ class SettingsFragment : Fragment() {
             .putBoolean(PREF_REQUIRES_CHARGING, binding.cbRequiresCharging.isChecked)
             .apply()
         SyncHelper.setupSync(requireContext(), syncInterval)
+    }
+
+    private fun saveSettings() {
+        persistAllSettingsFromUi()
         Toast.makeText(requireContext(), "设置已保存", Toast.LENGTH_SHORT).show()
     }
 

@@ -8,6 +8,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.example.photobackup.data.Category
+import com.example.photobackup.data.CategoryRepository
+import com.example.photobackup.ui.SettingsFragment
 import com.example.photobackup.util.AppLogger
 import com.example.photobackup.worker.PhotoBackupWorker
 import java.io.File
@@ -182,6 +184,44 @@ class PhotoBackupManager private constructor(private val context: Context) {
         } catch (e: Exception) {
             AppLogger.e(TAG, "启动定时备份失败", e)
             throw e
+        }
+    }
+
+    /**
+     * 根据当前设置（备份模式、间隔等）重新提交定时备份任务。
+     * 在用户切换「云端备份配置」或「备份目标根目录」后调用，使已运行的定时任务使用新目标。
+     */
+    fun reapplyPeriodicBackupFromCurrentSettings() {
+        try {
+            val prefs = context.getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
+            val mode = prefs.getString(SettingsFragment.PREF_BACKUP_MODE, SettingsFragment.BACKUP_MODE_LOCAL) ?: SettingsFragment.BACKUP_MODE_LOCAL
+            val intervalMinutes = prefs.getLong("interval_minutes", 1440L).coerceAtLeast(15L)
+            val requiresNetwork = prefs.getBoolean("requires_network", false)
+            val requiresCharging = prefs.getBoolean("requires_charging", false)
+            val categories = CategoryRepository(context).getCategories().filter { it.backupFolders.isNotEmpty() }
+            if (categories.isEmpty()) return
+            val backupRoot = if (mode == SettingsFragment.BACKUP_MODE_LOCAL) {
+                prefs.getString(SettingsFragment.PREF_BACKUP_ROOT_DIRECTORY, null).orEmpty().trim()
+            } else {
+                ""
+            }
+            if (mode == SettingsFragment.BACKUP_MODE_LOCAL && backupRoot.isEmpty()) return
+            if (mode == SettingsFragment.BACKUP_MODE_CLOUD) {
+                val baseUrl = prefs.getString(SettingsFragment.PREF_CLOUD_BASE_URL, null).orEmpty().trim()
+                val userid = prefs.getString(SettingsFragment.PREF_CLOUD_USER_ID, null).orEmpty().trim()
+                if (baseUrl.isEmpty() || userid.isEmpty()) return
+            }
+            setupPeriodicBackupFromCategories(
+                backupRoot = backupRoot,
+                categories = categories,
+                intervalMinutes = intervalMinutes,
+                requiresNetwork = requiresNetwork,
+                requiresCharging = requiresCharging,
+                useCloudApi = mode == SettingsFragment.BACKUP_MODE_CLOUD
+            )
+            AppLogger.d(TAG, "已按当前设置重新提交定时备份（mode=$mode）")
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "重新提交定时备份失败", e)
         }
     }
 
