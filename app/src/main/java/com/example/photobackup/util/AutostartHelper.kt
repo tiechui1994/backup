@@ -54,19 +54,22 @@ object AutostartHelper {
 
         try {
             when {
-                brand.contains("xiaomi") -> {
+                // 小米 / 红米 / POCO 共用 MIUI 安全中心
+                brand.contains("xiaomi") || brand.contains("redmi") || brand.contains("poco") -> {
                     intent.component = ComponentName(
                         "com.miui.securitycenter",
                         "com.miui.permcenter.autostart.AutoStartManagementActivity"
                     )
                 }
-                brand.contains("oppo") -> {
+                // OPPO / Realme 共用 ColorOS 安全中心
+                brand.contains("oppo") || brand.contains("realme") -> {
                     intent.component = ComponentName(
                         "com.coloros.safecenter",
                         "com.coloros.safecenter.permission.startup.StartupAppListActivity"
                     )
                 }
-                brand.contains("vivo") -> {
+                // Vivo / iQOO 共用权限管理
+                brand.contains("vivo") || brand.contains("iqoo") -> {
                     intent.component = ComponentName(
                         "com.vivo.permissionmanager",
                         "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"
