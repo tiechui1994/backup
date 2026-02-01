@@ -133,7 +133,6 @@ jobs:
         name: installable-apks
         path: |
           app/build/**/*.apk
-          app/build/**/*.aab
         retention-days: 1
         
 
