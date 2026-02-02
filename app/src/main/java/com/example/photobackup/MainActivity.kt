@@ -84,6 +84,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        AppLogger.d("MainActivity", "onNewIntent called - Activity brought to foreground from Tile")
+        // 当从 Tile 启动时，如果 Activity 已经存在，会调用 onNewIntent
+        // 确保 Activity 被带到前台并刷新状态
+        setIntent(intent)
+    }
+
     override fun onResume() {
         super.onResume()
         handlePendingAction()
