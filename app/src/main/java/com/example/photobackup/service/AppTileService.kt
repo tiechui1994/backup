@@ -41,7 +41,7 @@ class AppTileService : TileService() {
                 }
             } catch (e: SecurityException) {
                 // 某些定制系统可能抛出 SecurityException
-                AppLogger.w("AppTileService", "SecurityException with startActivityAndCollapse, trying fallback", e)
+                AppLogger.e("AppTileService", "SecurityException with startActivityAndCollapse, trying fallback", e)
                 try {
                     // Fallback: 直接使用 startActivity
                     startActivity(intent)
