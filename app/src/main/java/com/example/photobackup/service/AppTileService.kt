@@ -15,56 +15,42 @@ class AppTileService : TileService() {
     override fun onClick() {
         super.onClick()
         try {
-            AppLogger.d("AppTileService", "Tile clicked, attempting to start MainActivity")
-            
             val intent = Intent(this, MainActivity::class.java).apply {
-                // 必须的 flags，用于从后台服务启动 Activity
+                // 从 TileService 启动必须带 NEW_TASK
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                // 如果 Activity 已经在运行，将其带到前台而不是创建新实例
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                // 配合 singleTask launchMode，确保正确的行为
+                // 若应用已在后台，将已有任务带到前台而不是新建
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                 addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                // 确保 Activity 被带到前台（某些定制系统需要）
                 addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                // 收起最近任务中本应用之上的其他任务，确保本应用在前台
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
             
-            // 尝试使用 startActivityAndCollapse（Android 7.0+）
-            // 它会自动收起下拉通知栏并启动 Activity
-            try {
+            // unlockAndRun：锁屏时会先解锁再启动，未锁屏时直接执行，利于从后台带到前台
+            val doStart = {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     startActivityAndCollapse(intent)
-                    AppLogger.d("AppTileService", "Successfully started MainActivity via startActivityAndCollapse")
                 } else {
-                    // Android 7.0 以下使用 startActivity
                     startActivity(intent)
-                    AppLogger.d("AppTileService", "Successfully started MainActivity via startActivity")
+                }
+            }
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    unlockAndRun(doStart)
+                } else {
+                    doStart()
                 }
             } catch (e: SecurityException) {
-                // 某些定制系统可能抛出 SecurityException
-                AppLogger.e("AppTileService", "SecurityException with startActivityAndCollapse, trying fallback", e)
+                AppLogger.e("AppTileService", "SecurityException, trying fallback", e)
                 try {
-                    // Fallback: 直接使用 startActivity
                     startActivity(intent)
-                    AppLogger.d("AppTileService", "Successfully started MainActivity via fallback startActivity")
                 } catch (e2: Exception) {
-                    AppLogger.e("AppTileService", "Failed to start MainActivity with fallback", e2)
-                    // 最后的尝试：使用更简单的 Intent
-                    try {
-                        val simpleIntent = Intent(this, MainActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                        }
-                        startActivity(simpleIntent)
-                        AppLogger.d("AppTileService", "Successfully started MainActivity with simple intent")
-                    } catch (e3: Exception) {
-                        AppLogger.e("AppTileService", "All attempts to start MainActivity failed", e3)
-                    }
+                    AppLogger.e("AppTileService", "Fallback failed", e2)
                 }
             } catch (e: Exception) {
                 AppLogger.e("AppTileService", "Failed to start MainActivity", e)
-                // 尝试 fallback
                 try {
                     startActivity(intent)
-                    AppLogger.d("AppTileService", "Successfully started MainActivity via exception fallback")
                 } catch (e2: Exception) {
                     AppLogger.e("AppTileService", "Fallback also failed", e2)
                 }
@@ -82,7 +68,6 @@ class AppTileService : TileService() {
             if (tile != null) {
                 tile.state = android.service.quicksettings.Tile.STATE_ACTIVE
                 tile.updateTile()
-                AppLogger.d("AppTileService", "Tile state updated to ACTIVE")
             }
         } catch (e: Exception) {
             AppLogger.e("AppTileService", "Error updating tile state", e)
@@ -91,7 +76,6 @@ class AppTileService : TileService() {
     
     override fun onStopListening() {
         super.onStopListening()
-        AppLogger.d("AppTileService", "Tile stopped listening")
     }
 }
 
